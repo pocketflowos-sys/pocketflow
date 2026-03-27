@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import type { Route } from "next";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -15,14 +16,14 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const navigation = [
+const navigation: { href: Route; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { href: "/dashboard", label: "Home", icon: Home },
   { href: "/transactions", label: "Transactions", icon: CreditCard },
   { href: "/budgets", label: "Budgets", icon: PiggyBank },
   { href: "/lend-borrow", label: "Lend/Borrow", icon: HandCoins },
   { href: "/investments", label: "Investments", icon: Landmark },
   { href: "/assets", label: "Assets", icon: Package },
-  { href: "/settings", label: "Settings", icon: Settings }
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {
