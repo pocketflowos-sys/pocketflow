@@ -1,0 +1,25 @@
+import * as React from "react";
+import { cn } from "@/lib/utils";
+
+type InputProps = React.InputHTMLAttributes<HTMLInputElement> & {
+  label?: string;
+  icon?: React.ReactNode;
+};
+
+export function Input({ label, icon, className, ...props }: InputProps) {
+  return (
+    <label className="block">
+      {label ? <span className="mb-2 block text-sm text-muted">{label}</span> : null}
+      <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 focus-within:border-primary/35">
+        {icon ? <span className="text-muted">{icon}</span> : null}
+        <input
+          className={cn(
+            "w-full bg-transparent text-white outline-none placeholder:text-muted/80",
+            className
+          )}
+          {...props}
+        />
+      </div>
+    </label>
+  );
+}
