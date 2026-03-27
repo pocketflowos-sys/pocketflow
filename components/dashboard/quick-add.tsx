@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import type { Route } from "next";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldShell, InputField, SelectField, TextareaField } from "@/components/ui/form-controls";
@@ -155,15 +156,12 @@ export function QuickAdd() {
     showMessage("Asset added.");
   };
 
-  const links = useMemo(
-    () => ({
-      Transaction: "/transactions",
-      "Lend/Borrow": "/lend-borrow",
-      Investment: "/investments",
-      Asset: "/assets"
-    }),
-    []
-  );
+  const links: Record<Tab, Route> = {
+    Transaction: "/transactions",
+    "Lend/Borrow": "/lend-borrow",
+    Investment: "/investments",
+    Asset: "/assets"
+  };
 
   const transactionValues = formState.Transaction;
   const lendBorrowValues = formState["Lend/Borrow"];
