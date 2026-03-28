@@ -33,7 +33,7 @@ export function TransactionForm({
   paymentMethodOptions: string[];
   submitLabel: string;
   onCancel: () => void;
-  onSubmit: (input: TransactionFormValues) => void;
+  onSubmit: (input: TransactionFormValues) => Promise<boolean> | void;
 }) {
   const [form, setForm] = useState<TransactionFormValues>(getDefaults(initialValue));
   const [error, setError] = useState("");
@@ -101,28 +101,28 @@ export function TransactionForm({
           />
         </FieldShell>
         <FieldShell label="Category">
-          <InputField
-            list="transaction-categories"
+          <SelectField
             value={form.category}
             onChange={(event) => setValue("category", event.target.value)}
-          />
-          <datalist id="transaction-categories">
+          >
             {categories.map((item) => (
-              <option key={item} value={item} />
+              <option key={item} value={item}>
+                {item}
+              </option>
             ))}
-          </datalist>
+          </SelectField>
         </FieldShell>
         <FieldShell label="Payment method">
-          <InputField
-            list="transaction-payment-methods"
+          <SelectField
             value={form.paymentMethod}
             onChange={(event) => setValue("paymentMethod", event.target.value)}
-          />
-          <datalist id="transaction-payment-methods">
+          >
             {paymentMethods.map((item) => (
-              <option key={item} value={item} />
+              <option key={item} value={item}>
+                {item}
+              </option>
             ))}
-          </datalist>
+          </SelectField>
         </FieldShell>
         <FieldShell label="Amount">
           <InputField

@@ -1,14 +1,12 @@
 "use client";
 
-import {
-  RadialBar,
-  RadialBarChart,
-  ResponsiveContainer,
-  PolarAngleAxis
-} from "recharts";
+import { PolarAngleAxis, RadialBar, RadialBarChart, ResponsiveContainer } from "recharts";
+import { formatPercent } from "@/lib/formatters";
 
 export function BudgetChart({ value }: { value: number }) {
-  const data = [{ name: "budget", value, fill: "#f6b626" }];
+  const safeValue = Number.isFinite(value) ? value : 0;
+  const chartValue = Math.max(0, Math.min(safeValue, 100));
+  const data = [{ name: "budget", value: chartValue, fill: "#f6b626" }];
 
   return (
     <div className="relative h-[280px]">
@@ -25,8 +23,8 @@ export function BudgetChart({ value }: { value: number }) {
           <RadialBar cornerRadius={18} dataKey="value" />
         </RadialBarChart>
       </ResponsiveContainer>
-      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-        <p className="text-5xl font-semibold">{value}%</p>
+      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
+        <p className="text-3xl font-semibold sm:text-5xl">{formatPercent(safeValue)}</p>
         <p className="mt-2 text-sm text-muted">budget used</p>
       </div>
     </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { Route } from "next";
 import { Button } from "@/components/ui/button";
@@ -13,51 +13,98 @@ import { cn } from "@/lib/utils";
 const tabs = ["Transaction", "Lend/Borrow", "Investment", "Asset"] as const;
 type Tab = (typeof tabs)[number];
 
-const freshDefaults = () => ({
-  Transaction: {
-    date: getTodayIso(),
-    type: "expense",
-    title: "",
-    category: "Food",
-    amount: "",
-    paymentMethod: "UPI",
-    notes: ""
-  },
-  "Lend/Borrow": {
-    date: getTodayIso(),
-    person: "",
-    kind: "given",
-    amount: "",
-    settled: "",
-    dueDate: "",
-    notes: ""
-  },
-  Investment: {
-    date: getTodayIso(),
-    investmentType: "Mutual Fund",
-    platform: "Groww",
-    investedAmount: "",
-    currentValue: "",
-    withdrawnAmount: "",
-    notes: ""
-  },
-  Asset: {
-    date: getTodayIso(),
-    assetName: "",
-    assetCategory: "Electronics",
-    purchaseCost: "",
-    currentValue: "",
-    notes: ""
-  }
-});
+type QuickAddOptions = {
+  categories: string[];
+  paymentMethods: string[];
+  investmentPlatforms: string[];
+  investmentTypes: string[];
+  assetCategories: string[];
+};
+
+function firstOrFallback(values: string[], fallback: string) {
+  return values[0] ?? fallback;
+}
+
+function buildDefaults(options: QuickAddOptions) {
+  return {
+    Transaction: {
+      date: getTodayIso(),
+      type: "expense",
+      title: "",
+      category: firstOrFallback(options.categories, "Food"),
+      amount: "",
+      paymentMethod: firstOrFallback(options.paymentMethods, "UPI"),
+      notes: ""
+    },
+    "Lend/Borrow": {
+      date: getTodayIso(),
+      person: "",
+      kind: "given",
+      amount: "",
+      settled: "",
+      dueDate: "",
+      notes: ""
+    },
+    Investment: {
+      date: getTodayIso(),
+      investmentType: firstOrFallback(options.investmentTypes, "Mutual Fund"),
+      platform: firstOrFallback(options.investmentPlatforms, "Groww"),
+      investedAmount: "",
+      currentValue: "",
+      withdrawnAmount: "",
+      notes: ""
+    },
+    Asset: {
+      date: getTodayIso(),
+      assetName: "",
+      assetCategory: firstOrFallback(options.assetCategories, "Electronics"),
+      purchaseCost: "",
+      currentValue: "",
+      notes: ""
+    }
+  };
+}
 
 export function QuickAdd() {
   const [activeTab, setActiveTab] = useState<Tab>("Transaction");
-  const [formState, setFormState] = useState(freshDefaults());
-  const [success, setSuccess] = useState("");
-  const [error, setError] = useState("");
   const { addAsset, addInvestment, addLendBorrowEntry, addTransaction } = usePocketFlow();
   const { categories, paymentMethods, investmentPlatforms, investmentTypes, assetCategories } = usePocketFlowOptions();
+  const optionState = useMemo(
+    () => ({ categories, paymentMethods, investmentPlatforms, investmentTypes, assetCategories }),
+    [assetCategories, categories, investmentPlatforms, investmentTypes, paymentMethods]
+  );
+  const [formState, setFormState] = useState(() => buildDefaults(optionState));
+  const [success, setSuccess] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const defaults = buildDefaults(optionState);
+    setFormState((prev) => ({
+      Transaction: {
+        ...prev.Transaction,
+        category: categories.includes(prev.Transaction.category) ? prev.Transaction.category : defaults.Transaction.category,
+        paymentMethod: paymentMethods.includes(prev.Transaction.paymentMethod)
+          ? prev.Transaction.paymentMethod
+          : defaults.Transaction.paymentMethod
+      },
+      "Lend/Borrow": prev["Lend/Borrow"],
+      Investment: {
+        ...prev.Investment,
+        investmentType: investmentTypes.includes(prev.Investment.investmentType)
+          ? prev.Investment.investmentType
+          : defaults.Investment.investmentType,
+        platform: investmentPlatforms.includes(prev.Investment.platform)
+          ? prev.Investment.platform
+          : defaults.Investment.platform
+      },
+      Asset: {
+        ...prev.Asset,
+        assetCategory: assetCategories.includes(prev.Asset.assetCategory)
+          ? prev.Asset.assetCategory
+          : defaults.Asset.assetCategory
+      }
+    }));
+  }, [assetCategories, categories, investmentPlatforms, investmentTypes, optionState, paymentMethods]);
 
   const setValue = (name: string, value: string) => {
     setFormState((prev) => ({
@@ -70,7 +117,7 @@ export function QuickAdd() {
   };
 
   const resetCurrentTab = () => {
-    const defaults = freshDefaults();
+    const defaults = buildDefaults(optionState);
     setFormState((prev) => ({
       ...prev,
       [activeTab]: defaults[activeTab]
@@ -87,13 +134,13 @@ export function QuickAdd() {
     setTimeout(() => setError(""), 2400);
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     setError("");
 
     if (activeTab === "Transaction") {
       const data = formState.Transaction;
       if (!data.title.trim() || !data.amount) return fail("Add title and amount first.");
-      addTransaction({
+      const saved = await addTransaction({
         date: data.date,
         type: data.type as "income" | "expense",
         title: data.title.trim(),
@@ -102,6 +149,7 @@ export function QuickAdd() {
         paymentMethod: data.paymentMethod.trim(),
         notes: data.notes.trim()
       });
+      if (!saved) return;
       resetCurrentTab();
       return showMessage("Transaction added to dashboard.");
     }
@@ -109,7 +157,7 @@ export function QuickAdd() {
     if (activeTab === "Lend/Borrow") {
       const data = formState["Lend/Borrow"];
       if (!data.person.trim() || !data.amount) return fail("Add person and amount first.");
-      addLendBorrowEntry({
+      const saved = await addLendBorrowEntry({
         date: data.date,
         person: data.person.trim(),
         type: data.kind as "given" | "borrowed",
@@ -118,6 +166,7 @@ export function QuickAdd() {
         dueDate: data.dueDate || undefined,
         notes: data.notes.trim()
       });
+      if (!saved) return;
       resetCurrentTab();
       return showMessage("Lend / borrow entry added.");
     }
@@ -127,7 +176,7 @@ export function QuickAdd() {
       if (!data.investedAmount || !data.currentValue) {
         return fail("Add invested amount and current value first.");
       }
-      addInvestment({
+      const saved = await addInvestment({
         date: data.date,
         investmentType: data.investmentType.trim(),
         platform: data.platform.trim(),
@@ -136,6 +185,7 @@ export function QuickAdd() {
         withdrawnAmount: Number(data.withdrawnAmount || 0),
         notes: data.notes.trim()
       });
+      if (!saved) return;
       resetCurrentTab();
       return showMessage("Investment saved.");
     }
@@ -144,7 +194,7 @@ export function QuickAdd() {
     if (!data.assetName.trim() || !data.currentValue) {
       return fail("Add asset name and current value first.");
     }
-    addAsset({
+    const saved = await addAsset({
       date: data.date,
       assetName: data.assetName.trim(),
       assetCategory: data.assetCategory.trim(),
@@ -152,6 +202,7 @@ export function QuickAdd() {
       currentValue: Number(data.currentValue),
       notes: data.notes.trim()
     });
+    if (!saved) return;
     resetCurrentTab();
     showMessage("Asset added.");
   };
@@ -174,7 +225,7 @@ export function QuickAdd() {
         <div>
           <p className="text-xl font-semibold">Quick Add</p>
           <p className="mt-1 text-sm text-muted">
-            Save real entries locally and jump to the full page when you need deeper control.
+            Save entries fast, then jump to the full page whenever you need deeper control.
           </p>
         </div>
         <div className="flex flex-col gap-2 md:items-end">
@@ -220,26 +271,28 @@ export function QuickAdd() {
             </SelectField>
           </FieldShell>
           <FieldShell label="Title" className="sm:col-span-2">
-            <InputField value={transactionValues.title} onChange={(event) => setValue("title", event.target.value)} />
+            <InputField value={transactionValues.title} onChange={(event) => setValue("title", event.target.value)} placeholder="Salary, Grocery, Client payment" />
           </FieldShell>
           <FieldShell label="Category">
-            <InputField list="quickadd-categories" value={transactionValues.category} onChange={(event) => setValue("category", event.target.value)} />
-            <datalist id="quickadd-categories">
+            <SelectField value={transactionValues.category} onChange={(event) => setValue("category", event.target.value)}>
               {categories.map((item) => (
-                <option key={item} value={item} />
+                <option key={item} value={item}>
+                  {item}
+                </option>
               ))}
-            </datalist>
+            </SelectField>
+          </FieldShell>
+          <FieldShell label="Payment method">
+            <SelectField value={transactionValues.paymentMethod} onChange={(event) => setValue("paymentMethod", event.target.value)}>
+              {paymentMethods.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </SelectField>
           </FieldShell>
           <FieldShell label="Amount">
             <InputField type="number" value={transactionValues.amount} onChange={(event) => setValue("amount", event.target.value)} />
-          </FieldShell>
-          <FieldShell label="Payment method">
-            <InputField list="quickadd-payment-methods" value={transactionValues.paymentMethod} onChange={(event) => setValue("paymentMethod", event.target.value)} />
-            <datalist id="quickadd-payment-methods">
-              {paymentMethods.map((item) => (
-                <option key={item} value={item} />
-              ))}
-            </datalist>
           </FieldShell>
           <FieldShell label="Notes" className="sm:col-span-2">
             <TextareaField rows={4} value={transactionValues.notes} onChange={(event) => setValue("notes", event.target.value)} />
@@ -254,11 +307,11 @@ export function QuickAdd() {
           </FieldShell>
           <FieldShell label="Type">
             <SelectField value={lendBorrowValues.kind} onChange={(event) => setValue("kind", event.target.value)}>
-              <option value="given">Given</option>
-              <option value="borrowed">Borrowed</option>
+              <option value="given">Money you gave</option>
+              <option value="borrowed">Money you borrowed</option>
             </SelectField>
           </FieldShell>
-          <FieldShell label="Person / company" className="sm:col-span-2">
+          <FieldShell label="Person / company">
             <InputField value={lendBorrowValues.person} onChange={(event) => setValue("person", event.target.value)} />
           </FieldShell>
           <FieldShell label="Amount">
@@ -282,20 +335,22 @@ export function QuickAdd() {
             <InputField type="date" value={investmentValues.date} onChange={(event) => setValue("date", event.target.value)} />
           </FieldShell>
           <FieldShell label="Investment type">
-            <InputField list="quickadd-investment-types" value={investmentValues.investmentType} onChange={(event) => setValue("investmentType", event.target.value)} />
-            <datalist id="quickadd-investment-types">
+            <SelectField value={investmentValues.investmentType} onChange={(event) => setValue("investmentType", event.target.value)}>
               {investmentTypes.map((item) => (
-                <option key={item} value={item} />
+                <option key={item} value={item}>
+                  {item}
+                </option>
               ))}
-            </datalist>
+            </SelectField>
           </FieldShell>
           <FieldShell label="Platform / broker">
-            <InputField list="quickadd-investment-platforms" value={investmentValues.platform} onChange={(event) => setValue("platform", event.target.value)} />
-            <datalist id="quickadd-investment-platforms">
+            <SelectField value={investmentValues.platform} onChange={(event) => setValue("platform", event.target.value)}>
               {investmentPlatforms.map((item) => (
-                <option key={item} value={item} />
+                <option key={item} value={item}>
+                  {item}
+                </option>
               ))}
-            </datalist>
+            </SelectField>
           </FieldShell>
           <FieldShell label="Invested amount">
             <InputField type="number" value={investmentValues.investedAmount} onChange={(event) => setValue("investedAmount", event.target.value)} />
@@ -321,12 +376,13 @@ export function QuickAdd() {
             <InputField value={assetValues.assetName} onChange={(event) => setValue("assetName", event.target.value)} />
           </FieldShell>
           <FieldShell label="Asset category">
-            <InputField list="quickadd-asset-categories" value={assetValues.assetCategory} onChange={(event) => setValue("assetCategory", event.target.value)} />
-            <datalist id="quickadd-asset-categories">
+            <SelectField value={assetValues.assetCategory} onChange={(event) => setValue("assetCategory", event.target.value)}>
               {assetCategories.map((item) => (
-                <option key={item} value={item} />
+                <option key={item} value={item}>
+                  {item}
+                </option>
               ))}
-            </datalist>
+            </SelectField>
           </FieldShell>
           <FieldShell label="Purchase cost">
             <InputField type="number" value={assetValues.purchaseCost} onChange={(event) => setValue("purchaseCost", event.target.value)} />

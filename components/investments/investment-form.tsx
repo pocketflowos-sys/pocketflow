@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { FieldShell, InputField, TextareaField } from "@/components/ui/form-controls";
+import { FieldShell, InputField, SelectField, TextareaField } from "@/components/ui/form-controls";
 import { getTodayIso } from "@/lib/formatters";
 import type { Investment } from "@/lib/types";
 
@@ -33,7 +33,7 @@ export function InvestmentForm({
   platformOptions: string[];
   submitLabel: string;
   onCancel: () => void;
-  onSubmit: (input: InvestmentFormValues) => void;
+  onSubmit: (input: InvestmentFormValues) => Promise<boolean> | void;
 }) {
   const [form, setForm] = useState<InvestmentFormValues>(getDefaults(initialValue));
   const [error, setError] = useState("");
@@ -60,20 +60,22 @@ export function InvestmentForm({
           <InputField type="date" value={form.date} onChange={(event) => setForm((prev) => ({ ...prev, date: event.target.value }))} />
         </FieldShell>
         <FieldShell label="Investment type">
-          <InputField list="investment-type-options" value={form.investmentType} onChange={(event) => setForm((prev) => ({ ...prev, investmentType: event.target.value }))} />
-          <datalist id="investment-type-options">
+          <SelectField value={form.investmentType} onChange={(event) => setForm((prev) => ({ ...prev, investmentType: event.target.value }))}>
             {investmentTypeOptions.map((item) => (
-              <option key={item} value={item} />
+              <option key={item} value={item}>
+                {item}
+              </option>
             ))}
-          </datalist>
+          </SelectField>
         </FieldShell>
         <FieldShell label="Platform / broker">
-          <InputField list="investment-platform-options" value={form.platform} onChange={(event) => setForm((prev) => ({ ...prev, platform: event.target.value }))} />
-          <datalist id="investment-platform-options">
+          <SelectField value={form.platform} onChange={(event) => setForm((prev) => ({ ...prev, platform: event.target.value }))}>
             {platformOptions.map((item) => (
-              <option key={item} value={item} />
+              <option key={item} value={item}>
+                {item}
+              </option>
             ))}
-          </datalist>
+          </SelectField>
         </FieldShell>
         <FieldShell label="Invested amount">
           <InputField type="number" min="0" value={form.investedAmount || ""} onChange={(event) => setForm((prev) => ({ ...prev, investedAmount: Number(event.target.value) }))} />

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Plus, Trash2, UserRound } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
@@ -21,23 +21,23 @@ function ListManager({
   description: string;
   items: string[];
   placeholder: string;
-  onSave: (nextItems: string[]) => void;
+  onSave: (nextItems: string[]) => Promise<boolean> | void;
 }) {
   const [draft, setDraft] = useState("");
 
-  function addItem() {
+  async function addItem() {
     const next = draft.trim();
     if (!next) return;
     if (items.some((item) => item.toLowerCase() === next.toLowerCase())) {
       setDraft("");
       return;
     }
-    onSave([...items, next].sort((a, b) => a.localeCompare(b)));
-    setDraft("");
+    const saved = await onSave([...items, next].sort((a, b) => a.localeCompare(b)));
+    if (saved !== false) setDraft("");
   }
 
-  function removeItem(itemToRemove: string) {
-    onSave(items.filter((item) => item !== itemToRemove));
+  async function removeItem(itemToRemove: string) {
+    await onSave(items.filter((item) => item !== itemToRemove));
   }
 
   return (
@@ -74,6 +74,13 @@ export function SettingsPage() {
   const [supportEmail, setSupportEmail] = useState(state.userSettings.supportEmail);
   const [saved, setSaved] = useState(false);
 
+
+  useEffect(() => {
+    setProfileName(state.userSettings.profileName);
+    setEmail(state.userSettings.email);
+    setSupportEmail(state.userSettings.supportEmail);
+  }, [state.userSettings.profileName, state.userSettings.email, state.userSettings.supportEmail]);
+
   const managerCounts = useMemo(
     () => ({
       categories: state.userSettings.categories.length,
@@ -84,8 +91,9 @@ export function SettingsPage() {
     [state.userSettings]
   );
 
-  function saveProfile() {
-    updateUserSettings({ profileName: profileName.trim(), email: email.trim(), supportEmail: supportEmail.trim() });
+  async function saveProfile() {
+    const didSave = await updateUserSettings({ profileName: profileName.trim(), email: email.trim(), supportEmail: supportEmail.trim() });
+    if (!didSave) return;
     setSaved(true);
     setTimeout(() => setSaved(false), 1800);
   }
@@ -93,9 +101,9 @@ export function SettingsPage() {
   return (
     <AppShell>
       <PageHeader
-        eyebrow="Phase 4"
+        eyebrow="Workspace settings"
         title="Settings"
-        description="Manage defaults that power Quick Add and your full pages. This is still local demo mode, but now the app behaves more like a real product."
+        description="Manage the defaults that power Quick Add and every full page across your live workspace."
       />
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -113,7 +121,7 @@ export function SettingsPage() {
             </div>
             <div>
               <h3 className="text-lg font-semibold">Profile & preferences</h3>
-              <p className="mt-1 text-sm text-muted">Saved locally for the current browser.</p>
+              <p className="mt-1 text-sm text-muted">Saved to your account settings.</p>
             </div>
           </div>
 
@@ -128,7 +136,7 @@ export function SettingsPage() {
               <InputField type="email" value={supportEmail} onChange={(event) => setSupportEmail(event.target.value)} />
             </FieldShell>
             <FieldShell label="Preferred currency">
-              <SelectField value={state.userSettings.currency} onChange={(event) => updateUserSettings({ currency: event.target.value })}>
+              <SelectField value={state.userSettings.currency} onChange={(event) => { void updateUserSettings({ currency: event.target.value }); }}>
                 <option value="INR">INR</option>
                 <option value="USD">USD</option>
                 <option value="AED">AED</option>
@@ -138,17 +146,17 @@ export function SettingsPage() {
           </div>
 
           <div className="mt-5 flex items-center gap-3">
-            <Button onClick={saveProfile}>Save profile</Button>
-            {saved ? <span className="text-sm text-success">Saved</span> : <span className="text-sm text-muted">Your choices affect the whole demo app.</span>}
+            <Button onClick={() => void saveProfile()}>Save profile</Button>
+            {saved ? <span className="text-sm text-success">Saved</span> : <span className="text-sm text-muted">Your choices update the whole workspace.</span>}
           </div>
         </Card>
 
         <Card className="p-5 md:p-6">
           <h3 className="text-lg font-semibold">Implementation note</h3>
           <div className="mt-4 space-y-3 text-sm text-muted">
-            <p>These settings now drive dropdowns and datalist suggestions across transactions, budgets, investments, assets, and Quick Add.</p>
-            <p>When we connect Supabase next, this same structure can be moved into real tables and user-specific profile records.</p>
-            <p>That means this phase already prepares the app logic for real authentication and cloud data sync.</p>
+            <p>These settings now drive dropdown choices across transactions, budgets, investments, assets, and Quick Add.</p>
+            <p>These settings are already wired to Supabase and stay user-specific across devices.</p>
+            <p>These controls now feed the synced data layer used across your account.</p>
           </div>
         </Card>
       </section>

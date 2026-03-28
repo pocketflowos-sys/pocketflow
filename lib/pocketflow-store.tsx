@@ -2,223 +2,727 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
   useState,
   type ReactNode
 } from "react";
-import { defaultPocketFlowState } from "@/lib/demo-data";
+import type { User } from "@supabase/supabase-js";
+import { emptyPocketFlowState, emptyUserSettings } from "@/lib/defaults";
 import { getMonthKey, getTodayIso } from "@/lib/formatters";
+import { createBrowserSupabaseClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import type {
   Asset,
   Budget,
   Investment,
   LendBorrowEntry,
+  PocketFlowContextValue,
   PocketFlowState,
+  Profile,
   Transaction,
   UserSettings
 } from "@/lib/types";
 
-const STORAGE_KEY = "pocketflow-demo-state";
-
-type NewTransaction = Omit<Transaction, "id">;
-type NewLendBorrow = Omit<LendBorrowEntry, "id">;
-type NewInvestment = Omit<Investment, "id">;
-type NewAsset = Omit<Asset, "id">;
-type NewBudget = Omit<Budget, "id">;
-
-type PocketFlowContextValue = {
-  state: PocketFlowState;
-  addTransaction: (input: NewTransaction) => void;
-  updateTransaction: (id: string, input: NewTransaction) => void;
-  deleteTransaction: (id: string) => void;
-  addLendBorrowEntry: (input: NewLendBorrow) => void;
-  updateLendBorrowEntry: (id: string, input: NewLendBorrow) => void;
-  deleteLendBorrowEntry: (id: string) => void;
-  addInvestment: (input: NewInvestment) => void;
-  updateInvestment: (id: string, input: NewInvestment) => void;
-  deleteInvestment: (id: string) => void;
-  addAsset: (input: NewAsset) => void;
-  updateAsset: (id: string, input: NewAsset) => void;
-  deleteAsset: (id: string) => void;
-  addBudget: (input: NewBudget) => void;
-  updateBudget: (id: string, input: NewBudget) => void;
-  deleteBudget: (id: string) => void;
-  updateUserSettings: (input: Partial<UserSettings>) => void;
-  resetDemo: () => void;
-};
-
 const PocketFlowContext = createContext<PocketFlowContextValue | null>(null);
 
-function createId(prefix: string) {
-  return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
+type DbTransactionRow = {
+  id: string;
+  transaction_date: string;
+  type: Transaction["type"];
+  title: string;
+  category: string;
+  amount: number;
+  payment_method: string;
+  notes: string | null;
+};
+
+type DbLendBorrowRow = {
+  id: string;
+  entry_date: string;
+  person_name: string;
+  type: LendBorrowEntry["type"];
+  amount: number;
+  amount_settled: number;
+  due_date: string | null;
+  notes: string | null;
+};
+
+type DbInvestmentRow = {
+  id: string;
+  investment_date: string;
+  investment_type: string;
+  platform: string;
+  invested_amount: number;
+  current_value: number;
+  withdrawn_amount: number;
+  notes: string | null;
+};
+
+type DbAssetRow = {
+  id: string;
+  purchase_date: string | null;
+  asset_name: string;
+  asset_category: string;
+  purchase_cost: number;
+  current_value: number;
+  notes: string | null;
+};
+
+type DbBudgetRow = {
+  id: string;
+  month_start: string;
+  category: string;
+  budget_amount: number;
+};
+
+type DbUserSettingsRow = {
+  profile_name: string | null;
+  email: string | null;
+  currency: string | null;
+  categories: string[] | null;
+  payment_methods: string[] | null;
+  investment_types: string[] | null;
+  investment_platforms: string[] | null;
+  asset_categories: string[] | null;
+  support_email: string | null;
+};
+
+type DbProfileRow = {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  preferred_currency: string | null;
+  access_status: Profile["accessStatus"] | null;
+  paid_at: string | null;
+};
+
+function normalizeNumber(value: unknown) {
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
 }
 
-function cleanState(input: PocketFlowState): PocketFlowState {
+function mapTransaction(row: DbTransactionRow): Transaction {
   return {
-    ...input,
-    transactions: Array.isArray(input.transactions) ? input.transactions : [],
-    lendBorrowEntries: Array.isArray(input.lendBorrowEntries) ? input.lendBorrowEntries : [],
-    investments: Array.isArray(input.investments) ? input.investments : [],
-    assets: Array.isArray(input.assets) ? input.assets : [],
-    budgets: Array.isArray(input.budgets) ? input.budgets : [],
-    userSettings: {
-      ...defaultPocketFlowState.userSettings,
-      ...(input.userSettings ?? {})
-    }
+    id: row.id,
+    date: row.transaction_date,
+    type: row.type,
+    title: row.title,
+    category: row.category,
+    amount: normalizeNumber(row.amount),
+    paymentMethod: row.payment_method,
+    notes: row.notes ?? ""
   };
 }
 
-export function PocketFlowProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<PocketFlowState>(defaultPocketFlowState);
-  const [hydrated, setHydrated] = useState(false);
+function mapLendBorrow(row: DbLendBorrowRow): LendBorrowEntry {
+  return {
+    id: row.id,
+    date: row.entry_date,
+    person: row.person_name,
+    type: row.type,
+    amount: normalizeNumber(row.amount),
+    amountSettled: normalizeNumber(row.amount_settled),
+    dueDate: row.due_date ?? undefined,
+    notes: row.notes ?? ""
+  };
+}
 
-  useEffect(() => {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw) as PocketFlowState;
-        setState(cleanState(parsed));
-      } catch {
-        window.localStorage.removeItem(STORAGE_KEY);
-      }
-    }
-    setHydrated(true);
+function mapInvestment(row: DbInvestmentRow): Investment {
+  return {
+    id: row.id,
+    date: row.investment_date,
+    investmentType: row.investment_type,
+    platform: row.platform,
+    investedAmount: normalizeNumber(row.invested_amount),
+    currentValue: normalizeNumber(row.current_value),
+    withdrawnAmount: normalizeNumber(row.withdrawn_amount),
+    notes: row.notes ?? ""
+  };
+}
+
+function mapAsset(row: DbAssetRow): Asset {
+  return {
+    id: row.id,
+    date: row.purchase_date ?? getTodayIso(),
+    assetName: row.asset_name,
+    assetCategory: row.asset_category,
+    purchaseCost: normalizeNumber(row.purchase_cost),
+    currentValue: normalizeNumber(row.current_value),
+    notes: row.notes ?? ""
+  };
+}
+
+function mapBudget(row: DbBudgetRow): Budget {
+  return {
+    id: row.id,
+    month: row.month_start.slice(0, 7),
+    category: row.category,
+    amount: normalizeNumber(row.budget_amount)
+  };
+}
+
+function mapSettings(row: DbUserSettingsRow | null, profile: Profile | null, fallbackEmail = ""): UserSettings {
+  return {
+    profileName: row?.profile_name ?? profile?.fullName ?? "",
+    email: row?.email ?? profile?.email ?? fallbackEmail,
+    currency: row?.currency ?? profile?.preferredCurrency ?? "INR",
+    categories: row?.categories?.length ? row.categories : emptyUserSettings.categories,
+    paymentMethods: row?.payment_methods?.length ? row.payment_methods : emptyUserSettings.paymentMethods,
+    investmentTypes: row?.investment_types?.length ? row.investment_types : emptyUserSettings.investmentTypes,
+    investmentPlatforms: row?.investment_platforms?.length
+      ? row.investment_platforms
+      : emptyUserSettings.investmentPlatforms,
+    assetCategories: row?.asset_categories?.length ? row.asset_categories : emptyUserSettings.assetCategories,
+    supportEmail: row?.support_email ?? emptyUserSettings.supportEmail
+  };
+}
+
+function mapProfile(row: DbProfileRow | null, user: User | null): Profile | null {
+  if (!user) return null;
+  return {
+    id: user.id,
+    fullName: row?.full_name ?? (user.user_metadata.full_name as string | undefined) ?? "",
+    email: row?.email ?? user.email ?? "",
+    preferredCurrency: row?.preferred_currency ?? "INR",
+    accessStatus: row?.access_status ?? "pending",
+    paidAt: row?.paid_at ?? null
+  };
+}
+
+async function ensureSettingsRow(userId: string) {
+  const supabase = createBrowserSupabaseClient();
+  await supabase.from("user_settings").upsert(
+    {
+      user_id: userId,
+      profile_name: emptyUserSettings.profileName,
+      email: emptyUserSettings.email,
+      currency: emptyUserSettings.currency,
+      categories: emptyUserSettings.categories,
+      payment_methods: emptyUserSettings.paymentMethods,
+      investment_types: emptyUserSettings.investmentTypes,
+      investment_platforms: emptyUserSettings.investmentPlatforms,
+      asset_categories: emptyUserSettings.assetCategories,
+      support_email: emptyUserSettings.supportEmail
+    } ,
+    { onConflict: "user_id" }
+  );
+}
+
+export function PocketFlowProvider({ children }: { children: ReactNode }) {
+  const [state, setState] = useState<PocketFlowState>(emptyPocketFlowState);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [operationError, setOperationError] = useState("");
+
+  const configured = isSupabaseConfigured();
+
+  const clearOperationError = useCallback(() => setOperationError(""), []);
+
+  const resetLocalState = useCallback(() => {
+    setState(emptyPocketFlowState);
+    setProfile(null);
+    setOperationError("");
   }, []);
 
+  const refresh = useCallback(async () => {
+    if (!configured) {
+      setLoading(false);
+      setOperationError("Supabase env variables are missing. Add them in Vercel and .env.local.");
+      return;
+    }
+
+    const supabase = createBrowserSupabaseClient();
+    setSyncing(true);
+    setOperationError("");
+
+    try {
+      const {
+        data: { user: currentUser },
+        error: userError
+      } = await supabase.auth.getUser();
+
+      if (userError) throw userError;
+      setUser(currentUser);
+
+      if (!currentUser) {
+        resetLocalState();
+        return;
+      }
+
+      await ensureSettingsRow(currentUser.id);
+
+      const [profileRes, settingsRes, transactionsRes, lendBorrowRes, investmentsRes, assetsRes, budgetsRes] = await Promise.all([
+        supabase
+          .from("profiles")
+          .select("id, full_name, email, preferred_currency, access_status, paid_at")
+          .eq("id", currentUser.id)
+          .maybeSingle(),
+        supabase
+          .from("user_settings")
+          .select(
+            "profile_name, email, currency, categories, payment_methods, investment_types, investment_platforms, asset_categories, support_email"
+          )
+          .eq("user_id", currentUser.id)
+          .maybeSingle(),
+        supabase
+          .from("transactions")
+          .select("id, transaction_date, type, title, category, amount, payment_method, notes")
+          .order("transaction_date", { ascending: false }),
+        supabase
+          .from("lend_borrow_entries")
+          .select("id, entry_date, person_name, type, amount, amount_settled, due_date, notes")
+          .order("entry_date", { ascending: false }),
+        supabase
+          .from("investments")
+          .select("id, investment_date, investment_type, platform, invested_amount, current_value, withdrawn_amount, notes")
+          .order("investment_date", { ascending: false }),
+        supabase
+          .from("assets")
+          .select("id, purchase_date, asset_name, asset_category, purchase_cost, current_value, notes")
+          .order("purchase_date", { ascending: false }),
+        supabase
+          .from("budgets")
+          .select("id, month_start, category, budget_amount")
+          .order("month_start", { ascending: false })
+      ]);
+
+      const firstError = [profileRes.error, settingsRes.error, transactionsRes.error, lendBorrowRes.error, investmentsRes.error, assetsRes.error, budgetsRes.error].find(Boolean);
+      if (firstError) throw firstError;
+
+      const nextProfile = mapProfile((profileRes.data ?? null) as DbProfileRow | null, currentUser);
+      setProfile(nextProfile);
+      setState({
+        transactions: (transactionsRes.data ?? []).map((row) => mapTransaction(row as DbTransactionRow)),
+        lendBorrowEntries: (lendBorrowRes.data ?? []).map((row) => mapLendBorrow(row as DbLendBorrowRow)),
+        investments: (investmentsRes.data ?? []).map((row) => mapInvestment(row as DbInvestmentRow)),
+        assets: (assetsRes.data ?? []).map((row) => mapAsset(row as DbAssetRow)),
+        budgets: (budgetsRes.data ?? []).map((row) => mapBudget(row as DbBudgetRow)),
+        userSettings: mapSettings((settingsRes.data ?? null) as DbUserSettingsRow | null, nextProfile, currentUser.email ?? "")
+      });
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : "Failed to sync your PocketFlow data.");
+    } finally {
+      setSyncing(false);
+      setLoading(false);
+    }
+  }, [configured, resetLocalState]);
+
   useEffect(() => {
-    if (!hydrated) return;
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  }, [hydrated, state]);
+    let active = true;
+    if (!configured) {
+      setLoading(false);
+      setOperationError("Supabase env variables are missing. Add them in Vercel and .env.local.");
+      return;
+    }
+
+    const supabase = createBrowserSupabaseClient();
+
+    supabase.auth.getUser().then(({ data }) => {
+      if (!active) return;
+      setUser(data.user ?? null);
+    });
+
+    refresh();
+
+    const {
+      data: { subscription }
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      refresh();
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, [configured, refresh]);
+
+  const runMutation = useCallback(async <T,>(callback: () => Promise<T>) => {
+    setSyncing(true);
+    setOperationError("");
+    try {
+      await callback();
+      return true;
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : "Something went wrong.");
+      return false;
+    } finally {
+      setSyncing(false);
+    }
+  }, []);
+
+  const signOut = useCallback(async () => {
+    if (!configured) return;
+    const supabase = createBrowserSupabaseClient();
+    await supabase.auth.signOut();
+    resetLocalState();
+    setUser(null);
+  }, [configured, resetLocalState]);
 
   const value = useMemo<PocketFlowContextValue>(() => {
-    const addTransaction = (input: NewTransaction) => {
-      setState((prev: PocketFlowState) => ({
-        ...prev,
-        transactions: [{ id: createId("txn"), ...input }, ...prev.transactions]
-      }));
+    const addTransaction = async (input: Omit<Transaction, "id">) => {
+      if (!user) return false;
+      return runMutation(async () => {
+        const supabase = createBrowserSupabaseClient();
+        const { data, error } = await supabase
+          .from("transactions")
+          .insert({
+            user_id: user.id,
+            transaction_date: input.date,
+            type: input.type,
+            title: input.title,
+            category: input.category,
+            amount: input.amount,
+            payment_method: input.paymentMethod,
+            notes: input.notes ?? null
+          })
+          .select("id, transaction_date, type, title, category, amount, payment_method, notes")
+          .single();
+        if (error) throw error;
+        setState((prev) => ({ ...prev, transactions: [mapTransaction(data as DbTransactionRow), ...prev.transactions] }));
+      });
     };
 
-    const updateTransaction = (id: string, input: NewTransaction) => {
-      setState((prev: PocketFlowState) => ({
-        ...prev,
-        transactions: prev.transactions.map((item: Transaction) => (item.id === id ? { id, ...input } : item))
-      }));
+    const updateTransaction = async (id: string, input: Omit<Transaction, "id">) => {
+      if (!user) return false;
+      return runMutation(async () => {
+        const supabase = createBrowserSupabaseClient();
+        const { data, error } = await supabase
+          .from("transactions")
+          .update({
+            transaction_date: input.date,
+            type: input.type,
+            title: input.title,
+            category: input.category,
+            amount: input.amount,
+            payment_method: input.paymentMethod,
+            notes: input.notes ?? null
+          })
+          .eq("id", id)
+          .eq("user_id", user.id)
+          .select("id, transaction_date, type, title, category, amount, payment_method, notes")
+          .single();
+        if (error) throw error;
+        setState((prev) => ({
+          ...prev,
+          transactions: prev.transactions.map((item) => (item.id === id ? mapTransaction(data as DbTransactionRow) : item))
+        }));
+      });
     };
 
-    const deleteTransaction = (id: string) => {
-      setState((prev: PocketFlowState) => ({
-        ...prev,
-        transactions: prev.transactions.filter((item: Transaction) => item.id !== id)
-      }));
+    const deleteTransaction = async (id: string) => {
+      if (!user) return false;
+      return runMutation(async () => {
+        const supabase = createBrowserSupabaseClient();
+        const { error } = await supabase.from("transactions").delete().eq("id", id).eq("user_id", user.id);
+        if (error) throw error;
+        setState((prev) => ({ ...prev, transactions: prev.transactions.filter((item) => item.id !== id) }));
+      });
     };
 
-    const addLendBorrowEntry = (input: NewLendBorrow) => {
-      setState((prev: PocketFlowState) => ({
-        ...prev,
-        lendBorrowEntries: [{ id: createId("lb"), ...input }, ...prev.lendBorrowEntries]
-      }));
+    const addLendBorrowEntry = async (input: Omit<LendBorrowEntry, "id">) => {
+      if (!user) return false;
+      return runMutation(async () => {
+        const supabase = createBrowserSupabaseClient();
+        const { data, error } = await supabase
+          .from("lend_borrow_entries")
+          .insert({
+            user_id: user.id,
+            entry_date: input.date,
+            person_name: input.person,
+            type: input.type,
+            amount: input.amount,
+            amount_settled: input.amountSettled,
+            due_date: input.dueDate ?? null,
+            notes: input.notes ?? null
+          })
+          .select("id, entry_date, person_name, type, amount, amount_settled, due_date, notes")
+          .single();
+        if (error) throw error;
+        setState((prev) => ({
+          ...prev,
+          lendBorrowEntries: [mapLendBorrow(data as DbLendBorrowRow), ...prev.lendBorrowEntries]
+        }));
+      });
     };
 
-    const updateLendBorrowEntry = (id: string, input: NewLendBorrow) => {
-      setState((prev: PocketFlowState) => ({
-        ...prev,
-        lendBorrowEntries: prev.lendBorrowEntries.map((item: LendBorrowEntry) =>
-          item.id === id ? { id, ...input } : item
-        )
-      }));
+    const updateLendBorrowEntry = async (id: string, input: Omit<LendBorrowEntry, "id">) => {
+      if (!user) return false;
+      return runMutation(async () => {
+        const supabase = createBrowserSupabaseClient();
+        const { data, error } = await supabase
+          .from("lend_borrow_entries")
+          .update({
+            entry_date: input.date,
+            person_name: input.person,
+            type: input.type,
+            amount: input.amount,
+            amount_settled: input.amountSettled,
+            due_date: input.dueDate ?? null,
+            notes: input.notes ?? null
+          })
+          .eq("id", id)
+          .eq("user_id", user.id)
+          .select("id, entry_date, person_name, type, amount, amount_settled, due_date, notes")
+          .single();
+        if (error) throw error;
+        setState((prev) => ({
+          ...prev,
+          lendBorrowEntries: prev.lendBorrowEntries.map((item) => (item.id === id ? mapLendBorrow(data as DbLendBorrowRow) : item))
+        }));
+      });
     };
 
-    const deleteLendBorrowEntry = (id: string) => {
-      setState((prev: PocketFlowState) => ({
-        ...prev,
-        lendBorrowEntries: prev.lendBorrowEntries.filter((item: LendBorrowEntry) => item.id !== id)
-      }));
+    const deleteLendBorrowEntry = async (id: string) => {
+      if (!user) return false;
+      return runMutation(async () => {
+        const supabase = createBrowserSupabaseClient();
+        const { error } = await supabase.from("lend_borrow_entries").delete().eq("id", id).eq("user_id", user.id);
+        if (error) throw error;
+        setState((prev) => ({ ...prev, lendBorrowEntries: prev.lendBorrowEntries.filter((item) => item.id !== id) }));
+      });
     };
 
-    const addInvestment = (input: NewInvestment) => {
-      setState((prev: PocketFlowState) => ({
-        ...prev,
-        investments: [{ id: createId("inv"), ...input }, ...prev.investments]
-      }));
+    const addInvestment = async (input: Omit<Investment, "id">) => {
+      if (!user) return false;
+      return runMutation(async () => {
+        const supabase = createBrowserSupabaseClient();
+        const { data, error } = await supabase
+          .from("investments")
+          .insert({
+            user_id: user.id,
+            investment_date: input.date,
+            investment_type: input.investmentType,
+            platform: input.platform,
+            invested_amount: input.investedAmount,
+            current_value: input.currentValue,
+            withdrawn_amount: input.withdrawnAmount,
+            notes: input.notes ?? null
+          })
+          .select("id, investment_date, investment_type, platform, invested_amount, current_value, withdrawn_amount, notes")
+          .single();
+        if (error) throw error;
+        setState((prev) => ({ ...prev, investments: [mapInvestment(data as DbInvestmentRow), ...prev.investments] }));
+      });
     };
 
-    const updateInvestment = (id: string, input: NewInvestment) => {
-      setState((prev: PocketFlowState) => ({
-        ...prev,
-        investments: prev.investments.map((item: Investment) => (item.id === id ? { id, ...input } : item))
-      }));
+    const updateInvestment = async (id: string, input: Omit<Investment, "id">) => {
+      if (!user) return false;
+      return runMutation(async () => {
+        const supabase = createBrowserSupabaseClient();
+        const { data, error } = await supabase
+          .from("investments")
+          .update({
+            investment_date: input.date,
+            investment_type: input.investmentType,
+            platform: input.platform,
+            invested_amount: input.investedAmount,
+            current_value: input.currentValue,
+            withdrawn_amount: input.withdrawnAmount,
+            notes: input.notes ?? null
+          })
+          .eq("id", id)
+          .eq("user_id", user.id)
+          .select("id, investment_date, investment_type, platform, invested_amount, current_value, withdrawn_amount, notes")
+          .single();
+        if (error) throw error;
+        setState((prev) => ({
+          ...prev,
+          investments: prev.investments.map((item) => (item.id === id ? mapInvestment(data as DbInvestmentRow) : item))
+        }));
+      });
     };
 
-    const deleteInvestment = (id: string) => {
-      setState((prev: PocketFlowState) => ({
-        ...prev,
-        investments: prev.investments.filter((item: Investment) => item.id !== id)
-      }));
+    const deleteInvestment = async (id: string) => {
+      if (!user) return false;
+      return runMutation(async () => {
+        const supabase = createBrowserSupabaseClient();
+        const { error } = await supabase.from("investments").delete().eq("id", id).eq("user_id", user.id);
+        if (error) throw error;
+        setState((prev) => ({ ...prev, investments: prev.investments.filter((item) => item.id !== id) }));
+      });
     };
 
-    const addAsset = (input: NewAsset) => {
-      setState((prev: PocketFlowState) => ({
-        ...prev,
-        assets: [{ id: createId("asset"), ...input }, ...prev.assets]
-      }));
+    const addAsset = async (input: Omit<Asset, "id">) => {
+      if (!user) return false;
+      return runMutation(async () => {
+        const supabase = createBrowserSupabaseClient();
+        const { data, error } = await supabase
+          .from("assets")
+          .insert({
+            user_id: user.id,
+            purchase_date: input.date,
+            asset_name: input.assetName,
+            asset_category: input.assetCategory,
+            purchase_cost: input.purchaseCost,
+            current_value: input.currentValue,
+            notes: input.notes ?? null
+          })
+          .select("id, purchase_date, asset_name, asset_category, purchase_cost, current_value, notes")
+          .single();
+        if (error) throw error;
+        setState((prev) => ({ ...prev, assets: [mapAsset(data as DbAssetRow), ...prev.assets] }));
+      });
     };
 
-    const updateAsset = (id: string, input: NewAsset) => {
-      setState((prev: PocketFlowState) => ({
-        ...prev,
-        assets: prev.assets.map((item: Asset) => (item.id === id ? { id, ...input } : item))
-      }));
+    const updateAsset = async (id: string, input: Omit<Asset, "id">) => {
+      if (!user) return false;
+      return runMutation(async () => {
+        const supabase = createBrowserSupabaseClient();
+        const { data, error } = await supabase
+          .from("assets")
+          .update({
+            purchase_date: input.date,
+            asset_name: input.assetName,
+            asset_category: input.assetCategory,
+            purchase_cost: input.purchaseCost,
+            current_value: input.currentValue,
+            notes: input.notes ?? null
+          })
+          .eq("id", id)
+          .eq("user_id", user.id)
+          .select("id, purchase_date, asset_name, asset_category, purchase_cost, current_value, notes")
+          .single();
+        if (error) throw error;
+        setState((prev) => ({ ...prev, assets: prev.assets.map((item) => (item.id === id ? mapAsset(data as DbAssetRow) : item)) }));
+      });
     };
 
-    const deleteAsset = (id: string) => {
-      setState((prev: PocketFlowState) => ({
-        ...prev,
-        assets: prev.assets.filter((item: Asset) => item.id !== id)
-      }));
+    const deleteAsset = async (id: string) => {
+      if (!user) return false;
+      return runMutation(async () => {
+        const supabase = createBrowserSupabaseClient();
+        const { error } = await supabase.from("assets").delete().eq("id", id).eq("user_id", user.id);
+        if (error) throw error;
+        setState((prev) => ({ ...prev, assets: prev.assets.filter((item) => item.id !== id) }));
+      });
     };
 
-    const addBudget = (input: NewBudget) => {
-      setState((prev: PocketFlowState) => ({
-        ...prev,
-        budgets: [{ id: createId("bud"), ...input }, ...prev.budgets]
-      }));
+    const addBudget = async (input: Omit<Budget, "id">) => {
+      if (!user) return false;
+      return runMutation(async () => {
+        const supabase = createBrowserSupabaseClient();
+        const { data, error } = await supabase
+          .from("budgets")
+          .insert({
+            user_id: user.id,
+            month_start: `${input.month}-01`,
+            category: input.category,
+            budget_amount: input.amount
+          })
+          .select("id, month_start, category, budget_amount")
+          .single();
+        if (error) throw error;
+        setState((prev) => ({ ...prev, budgets: [mapBudget(data as DbBudgetRow), ...prev.budgets] }));
+      });
     };
 
-    const updateBudget = (id: string, input: NewBudget) => {
-      setState((prev: PocketFlowState) => ({
-        ...prev,
-        budgets: prev.budgets.map((item: Budget) => (item.id === id ? { id, ...input } : item))
-      }));
+    const updateBudget = async (id: string, input: Omit<Budget, "id">) => {
+      if (!user) return false;
+      return runMutation(async () => {
+        const supabase = createBrowserSupabaseClient();
+        const { data, error } = await supabase
+          .from("budgets")
+          .update({
+            month_start: `${input.month}-01`,
+            category: input.category,
+            budget_amount: input.amount
+          })
+          .eq("id", id)
+          .eq("user_id", user.id)
+          .select("id, month_start, category, budget_amount")
+          .single();
+        if (error) throw error;
+        setState((prev) => ({ ...prev, budgets: prev.budgets.map((item) => (item.id === id ? mapBudget(data as DbBudgetRow) : item)) }));
+      });
     };
 
-    const deleteBudget = (id: string) => {
-      setState((prev: PocketFlowState) => ({
-        ...prev,
-        budgets: prev.budgets.filter((item: Budget) => item.id !== id)
-      }));
+    const deleteBudget = async (id: string) => {
+      if (!user) return false;
+      return runMutation(async () => {
+        const supabase = createBrowserSupabaseClient();
+        const { error } = await supabase.from("budgets").delete().eq("id", id).eq("user_id", user.id);
+        if (error) throw error;
+        setState((prev) => ({ ...prev, budgets: prev.budgets.filter((item) => item.id !== id) }));
+      });
     };
 
-    const updateUserSettings = (input: Partial<UserSettings>) => {
-      setState((prev: PocketFlowState) => ({
-        ...prev,
-        userSettings: {
-          ...prev.userSettings,
+    const updateUserSettings = async (input: Partial<UserSettings>) => {
+      if (!user) return false;
+      return runMutation(async () => {
+        const supabase = createBrowserSupabaseClient();
+        const nextSettings: UserSettings = {
+          ...state.userSettings,
           ...input,
-          categories: input.categories ?? prev.userSettings.categories,
-          paymentMethods: input.paymentMethods ?? prev.userSettings.paymentMethods,
-          investmentTypes: input.investmentTypes ?? prev.userSettings.investmentTypes,
-          investmentPlatforms: input.investmentPlatforms ?? prev.userSettings.investmentPlatforms,
-          assetCategories: input.assetCategories ?? prev.userSettings.assetCategories
-        }
-      }));
-    };
+          categories: input.categories ?? state.userSettings.categories,
+          paymentMethods: input.paymentMethods ?? state.userSettings.paymentMethods,
+          investmentTypes: input.investmentTypes ?? state.userSettings.investmentTypes,
+          investmentPlatforms: input.investmentPlatforms ?? state.userSettings.investmentPlatforms,
+          assetCategories: input.assetCategories ?? state.userSettings.assetCategories
+        };
 
-    const resetDemo = () => setState(defaultPocketFlowState);
+        const { error } = await supabase.from("user_settings").upsert(
+          {
+            user_id: user.id,
+            profile_name: nextSettings.profileName,
+            email: nextSettings.email,
+            currency: nextSettings.currency,
+            categories: nextSettings.categories,
+            payment_methods: nextSettings.paymentMethods,
+            investment_types: nextSettings.investmentTypes,
+            investment_platforms: nextSettings.investmentPlatforms,
+            asset_categories: nextSettings.assetCategories,
+            support_email: nextSettings.supportEmail
+          },
+          { onConflict: "user_id" }
+        );
+        if (error) throw error;
+
+        const profileUpdate: Record<string, string> = {
+          full_name: nextSettings.profileName,
+          preferred_currency: nextSettings.currency,
+          email: nextSettings.email
+        };
+        const { error: profileError } = await supabase.from("profiles").update(profileUpdate).eq("id", user.id);
+        if (profileError) throw profileError;
+
+        if (nextSettings.email && nextSettings.email !== user.email) {
+          const { error: authError } = await supabase.auth.updateUser({ email: nextSettings.email });
+          if (authError) throw authError;
+        }
+
+        setState((prev) => ({ ...prev, userSettings: nextSettings }));
+        setProfile((prev) =>
+          prev
+            ? {
+                ...prev,
+                fullName: nextSettings.profileName,
+                email: nextSettings.email,
+                preferredCurrency: nextSettings.currency
+              }
+            : prev
+        );
+      });
+    };
 
     return {
       state,
+      profile,
+      loading,
+      syncing,
+      operationError,
+      isAuthenticated: Boolean(user),
+      isPaid: profile?.accessStatus === "active",
+      refresh,
+      clearOperationError,
       addTransaction,
       updateTransaction,
       deleteTransaction,
@@ -235,9 +739,9 @@ export function PocketFlowProvider({ children }: { children: ReactNode }) {
       updateBudget,
       deleteBudget,
       updateUserSettings,
-      resetDemo
+      signOut
     };
-  }, [state]);
+  }, [clearOperationError, loading, operationError, profile, refresh, runMutation, signOut, state, syncing, user]);
 
   return <PocketFlowContext.Provider value={value}>{children}</PocketFlowContext.Provider>;
 }
@@ -257,25 +761,25 @@ export function usePocketFlowOptions() {
     const categories = Array.from(
       new Set([
         ...state.userSettings.categories,
-        ...state.transactions.map((item: Transaction) => item.category),
-        ...state.budgets.map((item: Budget) => item.category)
+        ...state.transactions.map((item) => item.category),
+        ...state.budgets.map((item) => item.category)
       ])
     ).sort();
 
     const paymentMethods = Array.from(
-      new Set([...state.userSettings.paymentMethods, ...state.transactions.map((item: Transaction) => item.paymentMethod)])
+      new Set([...state.userSettings.paymentMethods, ...state.transactions.map((item) => item.paymentMethod)])
     ).sort();
 
     const investmentTypes = Array.from(
-      new Set([...state.userSettings.investmentTypes, ...state.investments.map((item: Investment) => item.investmentType)])
+      new Set([...state.userSettings.investmentTypes, ...state.investments.map((item) => item.investmentType)])
     ).sort();
 
     const investmentPlatforms = Array.from(
-      new Set([...state.userSettings.investmentPlatforms, ...state.investments.map((item: Investment) => item.platform)])
+      new Set([...state.userSettings.investmentPlatforms, ...state.investments.map((item) => item.platform)])
     ).sort();
 
     const assetCategories = Array.from(
-      new Set([...state.userSettings.assetCategories, ...state.assets.map((item: Asset) => item.assetCategory)])
+      new Set([...state.userSettings.assetCategories, ...state.assets.map((item) => item.assetCategory)])
     ).sort();
 
     return {
@@ -296,57 +800,52 @@ export function useDashboardData() {
 
   return useMemo(() => {
     const totalIncome = state.transactions
-      .filter((item: Transaction) => item.type === "income")
-      .reduce((sum: number, item: Transaction) => sum + item.amount, 0);
+      .filter((item) => item.type === "income")
+      .reduce((sum, item) => sum + item.amount, 0);
 
     const totalExpenses = state.transactions
-      .filter((item: Transaction) => item.type === "expense")
-      .reduce((sum: number, item: Transaction) => sum + item.amount, 0);
+      .filter((item) => item.type === "expense")
+      .reduce((sum, item) => sum + item.amount, 0);
 
     const receivables = state.lendBorrowEntries
-      .filter((item: LendBorrowEntry) => item.type === "given")
-      .reduce((sum: number, item: LendBorrowEntry) => sum + Math.max(item.amount - item.amountSettled, 0), 0);
+      .filter((item) => item.type === "given")
+      .reduce((sum, item) => sum + Math.max(item.amount - item.amountSettled, 0), 0);
 
     const payables = state.lendBorrowEntries
-      .filter((item: LendBorrowEntry) => item.type === "borrowed")
-      .reduce((sum: number, item: LendBorrowEntry) => sum + Math.max(item.amount - item.amountSettled, 0), 0);
+      .filter((item) => item.type === "borrowed")
+      .reduce((sum, item) => sum + Math.max(item.amount - item.amountSettled, 0), 0);
 
-    const totalInvestments = state.investments.reduce((sum: number, item: Investment) => sum + item.currentValue, 0);
+    const totalInvestments = state.investments.reduce((sum, item) => sum + item.currentValue, 0);
     const currentBalance = totalIncome - totalExpenses + receivables - payables;
     const savingsRate = totalIncome > 0 ? ((totalIncome - totalExpenses) / totalIncome) * 100 : 0;
 
-    const currentMonthBudgets = state.budgets.filter((budget: Budget) => budget.month === monthKey);
-    const totalBudget = currentMonthBudgets.reduce((sum: number, item: Budget) => sum + item.amount, 0);
+    const currentMonthBudgets = state.budgets.filter((budget) => budget.month === monthKey);
+    const totalBudget = currentMonthBudgets.reduce((sum, item) => sum + item.amount, 0);
     const currentMonthExpenses = state.transactions
-      .filter((item: Transaction) => item.type === "expense" && getMonthKey(item.date) === monthKey)
-      .reduce((sum: number, item: Transaction) => sum + item.amount, 0);
+      .filter((item) => item.type === "expense" && getMonthKey(item.date) === monthKey)
+      .reduce((sum, item) => sum + item.amount, 0);
     const budgetUsed = totalBudget > 0 ? (currentMonthExpenses / totalBudget) * 100 : 0;
 
-    const assetsValue = state.assets.reduce((sum: number, item: Asset) => sum + item.currentValue, 0);
+    const assetsValue = state.assets.reduce((sum, item) => sum + item.currentValue, 0);
 
     const expenseByCategoryMap = state.transactions
-      .filter((item: Transaction) => item.type === "expense" && getMonthKey(item.date) === monthKey)
-      .reduce<Record<string, number>>((acc: Record<string, number>, item: Transaction) => {
+      .filter((item) => item.type === "expense" && getMonthKey(item.date) === monthKey)
+      .reduce<Record<string, number>>((acc, item) => {
         acc[item.category] = (acc[item.category] ?? 0) + item.amount;
         return acc;
       }, {});
 
-    const expenseByCategory = (Object.entries(expenseByCategoryMap) as [string, number][])
-      .map(([name, value]: [string, number]) => ({ name, value }))
+    const expenseByCategory = Object.entries(expenseByCategoryMap)
+      .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value);
 
     const monthBuckets = new Map<string, { income: number; expense: number }>();
-    state.transactions.forEach((item: Transaction) => {
+    state.transactions.forEach((item) => {
       const key = getMonthKey(item.date);
-      if (!monthBuckets.has(key)) {
-        monthBuckets.set(key, { income: 0, expense: 0 });
-      }
+      if (!monthBuckets.has(key)) monthBuckets.set(key, { income: 0, expense: 0 });
       const bucket = monthBuckets.get(key)!;
-      if (item.type === "income") {
-        bucket.income += item.amount;
-      } else {
-        bucket.expense += item.amount;
-      }
+      if (item.type === "income") bucket.income += item.amount;
+      else bucket.expense += item.amount;
     });
 
     const incomeVsExpense = Array.from(monthBuckets.entries())
@@ -359,22 +858,22 @@ export function useDashboardData() {
       }));
 
     const investmentGrowth = [...state.investments]
-      .sort((a: Investment, b: Investment) => +new Date(a.date) - +new Date(b.date))
-      .map((item: Investment) => ({
+      .sort((a, b) => +new Date(a.date) - +new Date(b.date))
+      .map((item) => ({
         month: new Intl.DateTimeFormat("en-IN", { month: "short" }).format(new Date(item.date)),
         value: item.currentValue
       }));
 
     const recentTransactions = [...state.transactions]
-      .sort((a: Transaction, b: Transaction) => +new Date(b.date) - +new Date(a.date))
+      .sort((a, b) => +new Date(b.date) - +new Date(a.date))
       .slice(0, 5)
-       .map((item: Transaction) => ({
+      .map((item) => ({
         ...item,
         dateLabel: new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short" }).format(new Date(item.date))
       }));
 
     const upcomingDueItems = state.lendBorrowEntries
-      .map((item: LendBorrowEntry) => {
+      .map((item) => {
         const balance = Math.max(item.amount - item.amountSettled, 0);
         const dueDateValue = item.dueDate ? new Date(item.dueDate) : new Date(item.date);
         const isOverdue = item.dueDate ? new Date(item.dueDate) < today && balance > 0 : false;
@@ -385,11 +884,11 @@ export function useDashboardData() {
           status: isOverdue ? "Overdue" : balance > 0 ? "Due soon" : "Closed"
         };
       })
-       .filter((item: { balance: number }) => item.balance > 0)
-       .sort((a: { dueSortValue: number }, b: { dueSortValue: number }) => a.dueSortValue - b.dueSortValue)
+      .filter((item) => item.balance > 0)
+      .sort((a, b) => a.dueSortValue - b.dueSortValue)
       .slice(0, 4);
 
-    const overdueCount = upcomingDueItems.filter((item: { status: string }) => item.status === "Overdue").length;
+    const overdueCount = upcomingDueItems.filter((item) => item.status === "Overdue").length;
 
     return {
       totalIncome,

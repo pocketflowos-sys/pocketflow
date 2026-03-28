@@ -1,52 +1,105 @@
-# PocketFlow Phase 4
+# PocketFlow Production Starter
 
-PocketFlow Phase 4 makes the local VS Code build more like a real product.
+This build takes the earlier PocketFlow prototype and moves it into a real product-ready structure.
 
-## Included now
+## What is now included
 
-- premium landing page
-- auth screens
-- functional dashboard with local persistence
-- transactions page with search, filters, CSV export, edit, delete
-- budget planner with month-based tracking
-- lend / borrow tracker with overdue highlights
-- investments page with returns and allocation view
-- assets page with grouped value tracking
-- settings managers for categories, payment methods, investment types, platforms, asset categories, and preferred currency
-- Razorpay placeholder routes
-- Supabase schema and seed files for the next real-data phase
+- real Supabase auth structure
+- protected app routes
+- paid-access gating (`pending` vs `active`)
+- Supabase-backed CRUD store for:
+  - transactions
+  - budgets
+  - lend / borrow
+  - investments
+  - assets
+  - user settings
+- Razorpay order creation
+- Razorpay payment verification route
+- Razorpay webhook route
+- Brevo transactional email hook
+- polished app shell with sign-out and refresh
+- `.gitignore` ready for GitHub / Vercel
+
+## Environment variables
+
+Copy `.env.example` to `.env.local`.
+
+```bash
+cp .env.example .env.local
+```
+
+Required values:
+
+- `NEXT_PUBLIC_APP_URL`
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `NEXT_PUBLIC_RAZORPAY_KEY_ID`
+- `RAZORPAY_KEY_SECRET`
+- `RAZORPAY_WEBHOOK_SECRET`
+- `BREVO_API_KEY`
+- `EMAIL_FROM`
+- `SUPPORT_EMAIL`
+
+## Supabase setup
+
+1. Open Supabase SQL Editor.
+2. Run `supabase/schema.sql`.
+3. Create one real user account in the app.
+4. Copy that user UUID from `auth.users`.
+5. Replace `replace-with-real-user-uuid` inside `supabase/seed.sql`.
+6. Run `supabase/seed.sql`.
+
+## Auth flow
+
+- signup creates an auth user
+- SQL trigger creates `profiles` and `user_settings`
+- login opens the private account
+- unpaid users are redirected to `/checkout`
+- paid users are allowed into the full app
+
+## Razorpay flow
+
+- `/api/razorpay/create-order` creates a live test order and stores a `payments` row
+- `/api/razorpay/verify` verifies the payment signature and activates the profile
+- `/api/razorpay/webhook` supports the production webhook callback
+
+Recommended webhook URL:
+
+```text
+https://your-domain.com/api/razorpay/webhook
+```
+
+## Brevo
+
+The app uses the Brevo SMTP API endpoint through `lib/email.ts`.
+Use a verified sender like:
+
+```text
+PocketFlow <support@pocketflowos.in>
+```
 
 ## Run locally
 
 ```bash
 npm install
-cp .env.example .env.local
 npm run dev
 ```
 
-Open:
+## Deploy on Vercel
 
-- `/` landing page
-- `/dashboard`
-- `/transactions`
-- `/budgets`
-- `/lend-borrow`
-- `/investments`
-- `/assets`
-- `/settings`
+1. Push this folder to GitHub
+2. Import the repo into Vercel
+3. Add the same env variables in Vercel Project Settings
+4. Deploy
+5. Add your custom domain
+6. Add the webhook URL in Razorpay
 
-## Current storage mode
+## Important notes
 
-This phase still uses browser localStorage for demo functionality.
-
-## Best next phase
-
-- replace localStorage with real Supabase auth + CRUD
-- add user-specific database sync
-- connect Razorpay success flow to paid access logic
-- connect email delivery after payment
-- protect app routes by real login state
-
-
-## Git / GitHub-safe structure
-This package intentionally excludes build artifacts and dependencies. After extracting, run `npm install` locally to generate `node_modules`. The included `.gitignore` already prevents `node_modules`, `.next`, `.env.local`, `.vercel`, and `*.tsbuildinfo` from being committed.
+- rotate any secrets that were previously shared in chat
+- do not commit `.env.local`
+- use Razorpay **test keys** first
+- verify Brevo domain authentication before sending live emails
+- keep `SUPABASE_SERVICE_ROLE_KEY` server-only

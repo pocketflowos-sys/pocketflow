@@ -75,7 +75,7 @@ export function LendBorrowPage() {
   return (
     <AppShell>
       <PageHeader
-        eyebrow="Phase 3"
+        eyebrow="Lending & borrowing"
         title="Lend / Borrow Tracker"
         description="Track what you gave, what you borrowed, due dates, balances, and overdue items in one clean view."
         actions={
@@ -87,9 +87,9 @@ export function LendBorrowPage() {
       />
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard title="Total to receive" value={formatCurrency(summary.totalToReceive)} detail="Open balances from given money" tone="green" icon={<HandCoins className="h-5 w-5" />} />
-        <SummaryCard title="Total to pay" value={formatCurrency(summary.totalToPay)} detail="Open balances from borrowed money" tone="red" />
-        <SummaryCard title="Overdue amount" value={formatCurrency(summary.overdueAmount)} detail="Need follow-up soon" tone={summary.overdueAmount > 0 ? "red" : "green"} />
+        <SummaryCard title="Total to receive" value={formatCurrency(summary.totalToReceive, state.userSettings.currency)} detail="Open balances from given money" tone="green" icon={<HandCoins className="h-5 w-5" />} />
+        <SummaryCard title="Total to pay" value={formatCurrency(summary.totalToPay, state.userSettings.currency)} detail="Open balances from borrowed money" tone="red" />
+        <SummaryCard title="Overdue amount" value={formatCurrency(summary.overdueAmount, state.userSettings.currency)} detail="Need follow-up soon" tone={summary.overdueAmount > 0 ? "red" : "green"} />
         <SummaryCard title="Closed entries" value={String(summary.closedEntries)} detail="Fully settled records" tone="gold" />
       </section>
 
@@ -139,16 +139,16 @@ export function LendBorrowPage() {
                 <div className="mt-4 grid gap-3 text-sm text-muted sm:grid-cols-2 lg:grid-cols-4">
                   <div>
                     <p>Total amount</p>
-                    <p className="mt-1 font-semibold text-white">{formatCurrency(item.amount)}</p>
+                    <p className="mt-1 font-semibold text-white">{formatCurrency(item.amount, state.userSettings.currency)}</p>
                   </div>
                   <div>
                     <p>Settled</p>
-                    <p className="mt-1 font-semibold text-white">{formatCurrency(item.amountSettled)}</p>
+                    <p className="mt-1 font-semibold text-white">{formatCurrency(item.amountSettled, state.userSettings.currency)}</p>
                   </div>
                   <div>
                     <p>Balance</p>
                     <p className={`mt-1 font-semibold ${item.balance > 0 ? "text-primary" : "text-success"}`}>
-                      {formatCurrency(item.balance)}
+                      {formatCurrency(item.balance, state.userSettings.currency)}
                     </p>
                   </div>
                   <div>
@@ -196,9 +196,10 @@ export function LendBorrowPage() {
         <LendBorrowForm
           submitLabel="Save entry"
           onCancel={() => setCreateOpen(false)}
-          onSubmit={(input) => {
-            addLendBorrowEntry(input);
-            setCreateOpen(false);
+          onSubmit={async (input) => {
+            const saved = await addLendBorrowEntry(input);
+            if (saved) setCreateOpen(false);
+            return saved;
           }}
         />
       </Modal>
@@ -209,9 +210,10 @@ export function LendBorrowPage() {
             initialValue={editingItem}
             submitLabel="Update entry"
             onCancel={() => setEditingItem(null)}
-            onSubmit={(input) => {
-              updateLendBorrowEntry(editingItem.id, input);
-              setEditingItem(null);
+            onSubmit={async (input) => {
+              const saved = await updateLendBorrowEntry(editingItem.id, input);
+              if (saved) setEditingItem(null);
+              return saved;
             }}
           />
         ) : null}

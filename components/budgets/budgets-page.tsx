@@ -59,7 +59,7 @@ export function BudgetsPage() {
   return (
     <AppShell>
       <PageHeader
-        eyebrow="Phase 3"
+        eyebrow="Budget planner"
         title="Budget Planner"
         description="Set budgets category by category, compare against actual spend, and watch overspending early."
         actions={
@@ -153,10 +153,13 @@ export function BudgetsPage() {
           categoryOptions={categories}
           submitLabel="Save budget"
           onCancel={() => setCreateOpen(false)}
-          onSubmit={(input) => {
-            addBudget(input);
-            setSelectedMonth(input.month);
-            setCreateOpen(false);
+          onSubmit={async (input) => {
+            const saved = await addBudget(input);
+            if (saved) {
+              setSelectedMonth(input.month);
+              setCreateOpen(false);
+            }
+            return saved;
           }}
         />
       </Modal>
@@ -168,9 +171,10 @@ export function BudgetsPage() {
             categoryOptions={categories}
             submitLabel="Update budget"
             onCancel={() => setEditingItem(null)}
-            onSubmit={(input) => {
-              updateBudget(editingItem.id, input);
-              setEditingItem(null);
+            onSubmit={async (input) => {
+              const saved = await updateBudget(editingItem.id, input);
+              if (saved) setEditingItem(null);
+              return saved;
             }}
           />
         ) : null}

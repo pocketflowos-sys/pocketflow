@@ -29,7 +29,7 @@ export function LendBorrowForm({
   initialValue?: LendBorrowEntry;
   submitLabel: string;
   onCancel: () => void;
-  onSubmit: (input: LendBorrowFormValues) => void;
+  onSubmit: (input: LendBorrowFormValues) => Promise<boolean> | void;
 }) {
   const [form, setForm] = useState<LendBorrowFormValues>(getDefaults(initialValue));
   const [error, setError] = useState("");

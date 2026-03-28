@@ -58,7 +58,7 @@ const featureCards = [
   {
     icon: Check,
     title: "Easy Setup",
-    text: "A practical starter structure you can run locally and extend fast."
+    text: "A practical money product you can launch, test, and improve fast."
   },
   {
     icon: Cloud,
@@ -204,7 +204,7 @@ export function LandingPage() {
             </h1>
             <p className="mt-6 max-w-2xl text-xl leading-8 text-muted">
               PocketFlow gives you complete clarity over income, expenses, budgets, lending,
-              investments, and assets — all in one simple system built for real people.
+              investments, and assets — all in one secure workspace built for real people.
             </p>
             <div className="mt-8 flex flex-col gap-4 sm:flex-row">
               <Link href="/signup">
@@ -447,7 +447,7 @@ export function LandingPage() {
                     Simple pricing. <span className="text-gradient">Clear value.</span>
                   </h2>
                   <p className="mt-4 text-lg leading-8 text-muted">
-                    PocketFlow is built to be practical. Pay once. Use it without monthly
+                    PocketFlow is built to be practical. Sign up, pay once, and keep using it without monthly
                     subscription pressure.
                   </p>
                   <div className="mt-8 flex items-end gap-3">
@@ -458,19 +458,19 @@ export function LandingPage() {
                     <Link href="/signup">
                       <Button>Get PocketFlow — ₹99</Button>
                     </Link>
-                    <Link href="/success">
-                      <Button variant="secondary">View success page</Button>
+                    <Link href="/login">
+                      <Button variant="secondary">Go to login</Button>
                     </Link>
                   </div>
                 </div>
 
                 <div className="grid gap-4">
                   {[
-                    "Instant access after payment",
+                    "Access unlocks automatically after payment verification",
                     "No subscription",
-                    "Secure checkout structure ready for Razorpay",
+                    "Razorpay order creation, verification, and webhook handling included",
                     "Built for mobile and desktop",
-                    "Dashboard starter included for rapid development"
+                    "Supabase-backed dashboard with protected routes"
                   ].map((item) => (
                     <div
                       key={item}
@@ -532,8 +532,8 @@ export function LandingPage() {
                   <Link href="/signup">
                     <Button>Get PocketFlow — ₹99</Button>
                   </Link>
-                  <Link href="/dashboard">
-                    <Button variant="secondary">Open demo dashboard</Button>
+                  <Link href="/login">
+                    <Button variant="secondary">Open login</Button>
                   </Link>
                 </div>
               </div>

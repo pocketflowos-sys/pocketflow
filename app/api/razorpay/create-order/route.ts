@@ -1,47 +1,44 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import { createServerSupabaseClient, createServiceRoleSupabaseClient } from "@/lib/supabase/server";
+import { createRazorpayOrder, pocketFlowPricing } from "@/lib/razorpay";
 
-const RAZORPAY_ORDERS_URL = "https://api.razorpay.com/v1/orders";
+export async function POST() {
+  try {
+    const supabase = createServerSupabaseClient();
+    const {
+      data: { user }
+    } = await supabase.auth.getUser();
 
-export async function POST(request: NextRequest) {
-  const body = await request.json().catch(() => ({}));
-  const amount = typeof body.amount === "number" ? body.amount : 9900;
-  const currency = typeof body.currency === "string" ? body.currency : "INR";
+    if (!user) {
+      return NextResponse.json({ error: "You must be logged in before creating an order." }, { status: 401 });
+    }
 
-  const keyId = process.env.RAZORPAY_KEY_ID;
-  const keySecret = process.env.RAZORPAY_KEY_SECRET;
-
-  if (!keyId || !keySecret) {
-    return NextResponse.json({
-      demo: true,
-      amount,
-      currency,
-      message: "Razorpay keys are missing. Add them to enable live order creation."
+    const receipt = `pocketflow_${user.id.slice(0, 8)}_${Date.now()}`;
+    const order = await createRazorpayOrder({
+      amount: pocketFlowPricing.amount,
+      currency: pocketFlowPricing.currency,
+      receipt,
+      notes: { user_id: user.id, product: pocketFlowPricing.productName }
     });
-  }
 
-  const auth = Buffer.from(`${keyId}:${keySecret}`).toString("base64");
+    const admin = createServiceRoleSupabaseClient();
+    await admin.from("payments").upsert(
+      {
+        user_id: user.id,
+        razorpay_order_id: order.id,
+        amount: pocketFlowPricing.amount / 100,
+        currency: pocketFlowPricing.currency,
+        status: order.status ?? "created",
+        raw_response: order
+      },
+      { onConflict: "razorpay_order_id" }
+    );
 
-  const response = await fetch(RAZORPAY_ORDERS_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${auth}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      amount,
-      currency,
-      receipt: `pocketflow_${Date.now()}`
-    })
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
+    return NextResponse.json(order);
+  } catch (error) {
     return NextResponse.json(
-      { error: "Failed to create Razorpay order", details: error },
+      { error: error instanceof Error ? error.message : "Failed to create a Razorpay order." },
       { status: 500 }
     );
   }
-
-  const data = await response.json();
-  return NextResponse.json(data);
 }

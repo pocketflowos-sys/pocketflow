@@ -12,7 +12,7 @@ import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 import { SummaryCard } from "@/components/ui/summary-card";
 import { downloadCsv, getInvestmentGain, getInvestmentReturnPercent } from "@/lib/finance";
-import { formatCompactDate, formatCurrency } from "@/lib/formatters";
+import { formatCompactDate, formatCsvDate, formatCurrency } from "@/lib/formatters";
 import { usePocketFlow, usePocketFlowOptions } from "@/lib/pocketflow-store";
 import type { Investment } from "@/lib/types";
 
@@ -59,7 +59,7 @@ export function InvestmentsPage() {
       "pocketflow-investments.csv",
       ["Date", "Type", "Platform", "Invested", "Current Value", "Withdrawn", "Gain/Loss", "Return %", "Notes"],
       rows.map((item) => [
-        item.date,
+        formatCsvDate(item.date),
         item.investmentType,
         item.platform,
         item.investedAmount,
@@ -88,7 +88,7 @@ export function InvestmentsPage() {
   return (
     <AppShell>
       <PageHeader
-        eyebrow="Phase 4"
+        eyebrow="Portfolio"
         title="Investments"
         description="Track portfolio value, returns, withdrawn money, and allocation across different investment types."
         actions={
@@ -224,9 +224,10 @@ export function InvestmentsPage() {
           platformOptions={investmentPlatforms}
           submitLabel="Save investment"
           onCancel={() => setCreateOpen(false)}
-          onSubmit={(input) => {
-            addInvestment(input);
-            setCreateOpen(false);
+          onSubmit={async (input) => {
+            const saved = await addInvestment(input);
+            if (saved) setCreateOpen(false);
+            return saved;
           }}
         />
       </Modal>
@@ -239,9 +240,10 @@ export function InvestmentsPage() {
             platformOptions={investmentPlatforms}
             submitLabel="Update investment"
             onCancel={() => setEditingItem(null)}
-            onSubmit={(input) => {
-              updateInvestment(editingItem.id, input);
-              setEditingItem(null);
+            onSubmit={async (input) => {
+              const saved = await updateInvestment(editingItem.id, input);
+              if (saved) setEditingItem(null);
+              return saved;
             }}
           />
         ) : null}

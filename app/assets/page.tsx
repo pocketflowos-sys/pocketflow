@@ -1,5 +1,7 @@
+import { requirePaidUser } from "@/lib/auth";
 import { AssetsPage } from "@/components/assets/assets-page";
 
-export default function AssetsRoute() {
+export default async function AssetsRoute() {
+  await requirePaidUser();
   return <AssetsPage />;
 }

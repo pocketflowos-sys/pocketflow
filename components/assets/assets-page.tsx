@@ -12,7 +12,7 @@ import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 import { SummaryCard } from "@/components/ui/summary-card";
 import { downloadCsv, getAssetChange, getAssetChangePercent } from "@/lib/finance";
-import { formatCompactDate, formatCurrency } from "@/lib/formatters";
+import { formatCompactDate, formatCsvDate, formatCurrency } from "@/lib/formatters";
 import { usePocketFlow, usePocketFlowOptions } from "@/lib/pocketflow-store";
 import type { Asset } from "@/lib/types";
 
@@ -64,7 +64,7 @@ export function AssetsPage() {
     downloadCsv(
       "pocketflow-assets.csv",
       ["Date", "Asset Name", "Category", "Purchase Cost", "Current Value", "Change", "Change %", "Notes"],
-      rows.map((item) => [item.date, item.assetName, item.assetCategory, item.purchaseCost, item.currentValue, item.change, item.changePercent.toFixed(2), item.notes ?? ""])
+      rows.map((item) => [formatCsvDate(item.date), item.assetName, item.assetCategory, item.purchaseCost, item.currentValue, item.change, item.changePercent.toFixed(2), item.notes ?? ""])
     );
   }
 
@@ -76,7 +76,7 @@ export function AssetsPage() {
   return (
     <AppShell>
       <PageHeader
-        eyebrow="Phase 4"
+        eyebrow="Net worth"
         title="Assets"
         description="Track owned items, current value, category grouping, and value appreciation or depreciation."
         actions={
@@ -189,9 +189,10 @@ export function AssetsPage() {
           categoryOptions={assetCategories}
           submitLabel="Save asset"
           onCancel={() => setCreateOpen(false)}
-          onSubmit={(input) => {
-            addAsset(input);
-            setCreateOpen(false);
+          onSubmit={async (input) => {
+            const saved = await addAsset(input);
+            if (saved) setCreateOpen(false);
+            return saved;
           }}
         />
       </Modal>
@@ -203,9 +204,10 @@ export function AssetsPage() {
             categoryOptions={assetCategories}
             submitLabel="Update asset"
             onCancel={() => setEditingItem(null)}
-            onSubmit={(input) => {
-              updateAsset(editingItem.id, input);
-              setEditingItem(null);
+            onSubmit={async (input) => {
+              const saved = await updateAsset(editingItem.id, input);
+              if (saved) setEditingItem(null);
+              return saved;
             }}
           />
         ) : null}

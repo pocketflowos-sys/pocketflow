@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { FieldShell, InputField } from "@/components/ui/form-controls";
+import { FieldShell, InputField, SelectField } from "@/components/ui/form-controls";
 import { getMonthKey, getTodayIso } from "@/lib/formatters";
 import type { Budget } from "@/lib/types";
 
@@ -26,7 +26,7 @@ export function BudgetForm({
   initialValue?: Budget;
   categoryOptions: string[];
   onCancel: () => void;
-  onSubmit: (input: BudgetFormValues) => void;
+  onSubmit: (input: BudgetFormValues) => Promise<boolean> | void;
   submitLabel: string;
 }) {
   const [form, setForm] = useState<BudgetFormValues>(getDefaults(initialValue));
@@ -62,17 +62,16 @@ export function BudgetForm({
           />
         </FieldShell>
         <FieldShell label="Category" className="sm:col-span-2">
-          <InputField
-            list="budget-category-options"
+          <SelectField
             value={form.category}
-            placeholder="Food, Housing, Bills"
             onChange={(event) => setForm((prev) => ({ ...prev, category: event.target.value }))}
-          />
-          <datalist id="budget-category-options">
+          >
             {categoryOptions.map((item) => (
-              <option key={item} value={item} />
+              <option key={item} value={item}>
+                {item}
+              </option>
             ))}
-          </datalist>
+          </SelectField>
         </FieldShell>
       </div>
 

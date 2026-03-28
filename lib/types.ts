@@ -1,4 +1,6 @@
 export type TransactionType = "income" | "expense";
+export type LendBorrowType = "given" | "borrowed";
+export type AccessStatus = "pending" | "active" | "blocked";
 
 export type Transaction = {
   id: string;
@@ -15,7 +17,7 @@ export type LendBorrowEntry = {
   id: string;
   date: string;
   person: string;
-  type: "given" | "borrowed";
+  type: LendBorrowType;
   amount: number;
   amountSettled: number;
   dueDate?: string;
@@ -69,4 +71,52 @@ export type PocketFlowState = {
   assets: Asset[];
   budgets: Budget[];
   userSettings: UserSettings;
+};
+
+export type Profile = {
+  id: string;
+  fullName: string;
+  email: string;
+  preferredCurrency: string;
+  accessStatus: AccessStatus;
+  paidAt?: string | null;
+};
+
+export type PaymentRecord = {
+  id: string;
+  orderId: string;
+  paymentId?: string | null;
+  amount: number;
+  currency: string;
+  status: string;
+  createdAt: string;
+};
+
+export type PocketFlowContextValue = {
+  state: PocketFlowState;
+  profile: Profile | null;
+  loading: boolean;
+  syncing: boolean;
+  operationError: string;
+  isAuthenticated: boolean;
+  isPaid: boolean;
+  refresh: () => Promise<void>;
+  clearOperationError: () => void;
+  addTransaction: (input: Omit<Transaction, "id">) => Promise<boolean>;
+  updateTransaction: (id: string, input: Omit<Transaction, "id">) => Promise<boolean>;
+  deleteTransaction: (id: string) => Promise<boolean>;
+  addLendBorrowEntry: (input: Omit<LendBorrowEntry, "id">) => Promise<boolean>;
+  updateLendBorrowEntry: (id: string, input: Omit<LendBorrowEntry, "id">) => Promise<boolean>;
+  deleteLendBorrowEntry: (id: string) => Promise<boolean>;
+  addInvestment: (input: Omit<Investment, "id">) => Promise<boolean>;
+  updateInvestment: (id: string, input: Omit<Investment, "id">) => Promise<boolean>;
+  deleteInvestment: (id: string) => Promise<boolean>;
+  addAsset: (input: Omit<Asset, "id">) => Promise<boolean>;
+  updateAsset: (id: string, input: Omit<Asset, "id">) => Promise<boolean>;
+  deleteAsset: (id: string) => Promise<boolean>;
+  addBudget: (input: Omit<Budget, "id">) => Promise<boolean>;
+  updateBudget: (id: string, input: Omit<Budget, "id">) => Promise<boolean>;
+  deleteBudget: (id: string) => Promise<boolean>;
+  updateUserSettings: (input: Partial<UserSettings>) => Promise<boolean>;
+  signOut: () => Promise<void>;
 };

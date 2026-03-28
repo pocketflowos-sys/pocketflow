@@ -1,33 +1,46 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { ReactNode, ComponentType } from "react";
 import type { Route } from "next";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   CreditCard,
   HandCoins,
   Home,
   Landmark,
+  Loader2,
+  LogOut,
   Package,
   PiggyBank,
   Settings,
+  ShieldCheck,
   Wallet
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { usePocketFlow } from "@/lib/pocketflow-store";
 
-const navigation: { href: Route; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+const navigation: { href: Route; label: string; icon: ComponentType<{ className?: string }> }[] = [
   { href: "/dashboard", label: "Home", icon: Home },
   { href: "/transactions", label: "Transactions", icon: CreditCard },
   { href: "/budgets", label: "Budgets", icon: PiggyBank },
   { href: "/lend-borrow", label: "Lend/Borrow", icon: HandCoins },
   { href: "/investments", label: "Investments", icon: Landmark },
   { href: "/assets", label: "Assets", icon: Package },
-  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/settings", label: "Settings", icon: Settings }
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const { profile, syncing, signOut } = usePocketFlow();
+
+  async function handleSignOut() {
+    await signOut();
+    router.push("/login");
+    router.refresh();
+  }
 
   return (
     <div className="min-h-screen bg-background text-white">
@@ -50,9 +63,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   href={item.href}
                   className={cn(
                     "flex items-center gap-3 rounded-2xl px-4 py-3 text-sm transition",
-                    active
-                      ? "bg-primary text-black"
-                      : "text-muted hover:bg-white/5 hover:text-white"
+                    active ? "bg-primary text-black" : "text-muted hover:bg-white/5 hover:text-white"
                   )}
                 >
                   <Icon className="h-4 w-4" />
@@ -63,9 +74,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
 
           <div className="mt-10 rounded-[28px] border border-primary/15 bg-primary/10 p-5">
-            <p className="text-sm font-semibold text-primary">PocketFlow Phase 4</p>
+            <p className="flex items-center gap-2 text-sm font-semibold text-primary">
+              <ShieldCheck className="h-4 w-4" /> Paid access connected
+            </p>
             <p className="mt-2 text-sm text-muted">
-              Investments, assets, and settings managers are now functional in local demo mode.
+              Protected routes, real Supabase storage, and Razorpay webhook access control are wired in this build.
             </p>
           </div>
         </aside>
@@ -73,11 +86,17 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="flex min-h-screen flex-col pb-28 lg:pb-0">
           <header className="sticky top-0 z-40 flex items-center justify-between border-b border-white/6 bg-background/85 px-4 py-4 backdrop-blur md:px-6">
             <div>
-              <p className="text-sm text-muted">PocketFlow local functional build</p>
-              <h1 className="text-xl font-semibold md:text-2xl">Track, edit, and manage your money</h1>
+              <p className="text-sm text-muted">PocketFlow private workspace</p>
+              <h1 className="text-xl font-semibold md:text-2xl">Track, review, and improve every rupee</h1>
             </div>
-            <div className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-muted">
-              VS Code friendly demo
+            <div className="flex items-center gap-3">
+              <div className="hidden rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-muted md:block">
+                {profile?.fullName || profile?.email || "PocketFlow user"}
+              </div>
+              <Button variant="secondary" onClick={handleSignOut} className="gap-2">
+                {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
+                Sign out
+              </Button>
             </div>
           </header>
 

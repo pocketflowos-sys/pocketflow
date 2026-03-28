@@ -12,8 +12,8 @@ import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 import { SummaryCard } from "@/components/ui/summary-card";
 import { downloadCsv } from "@/lib/finance";
-import { formatCompactDate, formatCurrency } from "@/lib/formatters";
-import { usePocketFlow } from "@/lib/pocketflow-store";
+import { formatCompactDate, formatCsvDate, formatCurrency } from "@/lib/formatters";
+import { usePocketFlow, usePocketFlowOptions } from "@/lib/pocketflow-store";
 import type { Transaction } from "@/lib/types";
 
 const defaultFilters = {
@@ -27,18 +27,19 @@ const defaultFilters = {
 
 export function TransactionsPage() {
   const { state, addTransaction, updateTransaction, deleteTransaction } = usePocketFlow();
+  const { categories, paymentMethods } = usePocketFlowOptions();
   const [filters, setFilters] = useState(defaultFilters);
   const [visibleCount, setVisibleCount] = useState(8);
   const [editingItem, setEditingItem] = useState<Transaction | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 
   const categoryOptions = useMemo(
-    () => Array.from(new Set(state.transactions.map((item) => item.category))).sort(),
-    [state.transactions]
+    () => Array.from(new Set([...categories, ...state.transactions.map((item) => item.category)])).sort(),
+    [categories, state.transactions]
   );
   const paymentMethodOptions = useMemo(
-    () => Array.from(new Set(state.transactions.map((item) => item.paymentMethod))).sort(),
-    [state.transactions]
+    () => Array.from(new Set([...paymentMethods, ...state.transactions.map((item) => item.paymentMethod)])).sort(),
+    [paymentMethods, state.transactions]
   );
 
   const filteredTransactions = useMemo(() => {
@@ -81,7 +82,7 @@ export function TransactionsPage() {
       "pocketflow-transactions.csv",
       ["Date", "Type", "Title", "Category", "Amount", "Payment Method", "Notes"],
       filteredTransactions.map((item) => [
-        item.date,
+        formatCsvDate(item.date),
         item.type,
         item.title,
         item.category,
@@ -93,7 +94,7 @@ export function TransactionsPage() {
   }
 
   function handleDelete(id: string) {
-    const confirmed = window.confirm("Delete this transaction from PocketFlow demo?");
+    const confirmed = window.confirm("Delete this transaction from PocketFlow?");
     if (confirmed) {
       deleteTransaction(id);
     }
@@ -102,7 +103,7 @@ export function TransactionsPage() {
   return (
     <AppShell>
       <PageHeader
-        eyebrow="Phase 3"
+        eyebrow="Money movement"
         title="Transactions"
         description="Search, filter, export, edit, and delete your saved transactions. Everything updates the dashboard immediately."
         actions={
@@ -120,9 +121,9 @@ export function TransactionsPage() {
       />
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard title="Filtered income" value={formatCurrency(summary.income)} detail="Based on current filters" tone="green" />
-        <SummaryCard title="Filtered expenses" value={formatCurrency(summary.expense)} detail="What went out in this view" tone="red" />
-        <SummaryCard title="Net movement" value={formatCurrency(summary.balance)} detail="Income minus expense" tone={summary.balance >= 0 ? "green" : "red"} />
+        <SummaryCard title="Filtered income" value={formatCurrency(summary.income, state.userSettings.currency)} detail="Based on current filters" tone="green" />
+        <SummaryCard title="Filtered expenses" value={formatCurrency(summary.expense, state.userSettings.currency)} detail="What went out in this view" tone="red" />
+        <SummaryCard title="Net movement" value={formatCurrency(summary.balance, state.userSettings.currency)} detail="Income minus expense" tone={summary.balance >= 0 ? "green" : "red"} />
         <SummaryCard title="Entries shown" value={String(summary.count)} detail="Transactions matching your filters" />
       </section>
 
@@ -252,7 +253,7 @@ export function TransactionsPage() {
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
                   <div className={`text-right text-2xl font-semibold ${isIncome ? "text-success" : "text-danger"}`}>
                     {isIncome ? "+" : "-"}
-                    {formatCurrency(item.amount)}
+                    {formatCurrency(item.amount, state.userSettings.currency)}
                   </div>
                   <div className="flex gap-2">
                     <Button variant="secondary" className="gap-2" onClick={() => setEditingItem(item)}>
@@ -290,9 +291,10 @@ export function TransactionsPage() {
           paymentMethodOptions={paymentMethodOptions}
           submitLabel="Save transaction"
           onCancel={() => setCreateOpen(false)}
-          onSubmit={(input) => {
-            addTransaction(input);
-            setCreateOpen(false);
+          onSubmit={async (input) => {
+            const saved = await addTransaction(input);
+            if (saved) setCreateOpen(false);
+            return saved;
           }}
         />
       </Modal>
@@ -310,9 +312,10 @@ export function TransactionsPage() {
             paymentMethodOptions={paymentMethodOptions}
             submitLabel="Update transaction"
             onCancel={() => setEditingItem(null)}
-            onSubmit={(input) => {
-              updateTransaction(editingItem.id, input);
-              setEditingItem(null);
+            onSubmit={async (input) => {
+              const saved = await updateTransaction(editingItem.id, input);
+              if (saved) setEditingItem(null);
+              return saved;
             }}
           />
         ) : null}
