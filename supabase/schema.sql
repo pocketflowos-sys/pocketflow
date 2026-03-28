@@ -21,7 +21,7 @@ create table if not exists public.user_settings (
   payment_methods text[] not null default array['UPI','Bank','Cash','Card','Wallet'],
   investment_types text[] not null default array['Mutual Fund','Stock','FD','Gold','Crypto','Other'],
   investment_platforms text[] not null default array['Groww','Zerodha','Upstox','Bank','Other'],
-  asset_categories text[] not null default array['Electronics','Vehicle','Property','Jewellery','Cash','Other'],
+  asset_categories text[] not null default array['Electronics','Vehicle','Property','Jewellery','Furniture','Other'],
   support_email text default 'support@pocketflowos.in',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -43,6 +43,7 @@ create table if not exists public.transactions (
 
 create index if not exists transactions_user_id_idx on public.transactions(user_id);
 create index if not exists transactions_transaction_date_idx on public.transactions(transaction_date desc);
+create index if not exists transactions_user_id_transaction_date_idx on public.transactions(user_id, transaction_date desc);
 
 create table if not exists public.budgets (
   id uuid primary key default gen_random_uuid(),
@@ -56,6 +57,7 @@ create table if not exists public.budgets (
 );
 
 create index if not exists budgets_user_id_idx on public.budgets(user_id);
+create index if not exists budgets_user_id_month_start_idx on public.budgets(user_id, month_start desc);
 
 create table if not exists public.lend_borrow_entries (
   id uuid primary key default gen_random_uuid(),
@@ -72,6 +74,7 @@ create table if not exists public.lend_borrow_entries (
 );
 
 create index if not exists lend_borrow_user_id_idx on public.lend_borrow_entries(user_id);
+create index if not exists lend_borrow_user_id_entry_date_idx on public.lend_borrow_entries(user_id, entry_date desc);
 
 create table if not exists public.investments (
   id uuid primary key default gen_random_uuid(),
@@ -88,6 +91,7 @@ create table if not exists public.investments (
 );
 
 create index if not exists investments_user_id_idx on public.investments(user_id);
+create index if not exists investments_user_id_investment_date_idx on public.investments(user_id, investment_date desc);
 
 create table if not exists public.assets (
   id uuid primary key default gen_random_uuid(),
@@ -103,6 +107,7 @@ create table if not exists public.assets (
 );
 
 create index if not exists assets_user_id_idx on public.assets(user_id);
+create index if not exists assets_user_id_purchase_date_idx on public.assets(user_id, purchase_date desc);
 
 create table if not exists public.payments (
   id uuid primary key default gen_random_uuid(),

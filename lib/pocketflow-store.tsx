@@ -195,13 +195,13 @@ function mapProfile(row: DbProfileRow | null, user: User | null): Profile | null
   };
 }
 
-async function ensureSettingsRow(userId: string) {
+async function ensureSettingsRow(user: User) {
   const supabase = createBrowserSupabaseClient();
   await supabase.from("user_settings").upsert(
     {
-      user_id: userId,
-      profile_name: emptyUserSettings.profileName,
-      email: emptyUserSettings.email,
+      user_id: user.id,
+      profile_name: (user.user_metadata.full_name as string | undefined) ?? emptyUserSettings.profileName,
+      email: user.email ?? emptyUserSettings.email,
       currency: emptyUserSettings.currency,
       categories: emptyUserSettings.categories,
       payment_methods: emptyUserSettings.paymentMethods,
@@ -209,8 +209,8 @@ async function ensureSettingsRow(userId: string) {
       investment_platforms: emptyUserSettings.investmentPlatforms,
       asset_categories: emptyUserSettings.assetCategories,
       support_email: emptyUserSettings.supportEmail
-    } ,
-    { onConflict: "user_id" }
+    },
+    { onConflict: "user_id", ignoreDuplicates: true }
   );
 }
 
@@ -257,7 +257,7 @@ export function PocketFlowProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      await ensureSettingsRow(currentUser.id);
+      await ensureSettingsRow(currentUser);
 
       const [profileRes, settingsRes, transactionsRes, lendBorrowRes, investmentsRes, assetsRes, budgetsRes] = await Promise.all([
         supabase
@@ -659,9 +659,11 @@ export function PocketFlowProvider({ children }: { children: ReactNode }) {
       if (!user) return false;
       return runMutation(async () => {
         const supabase = createBrowserSupabaseClient();
+        const trimmedEmail = input.email?.trim();
         const nextSettings: UserSettings = {
           ...state.userSettings,
           ...input,
+          email: trimmedEmail ?? state.userSettings.email,
           categories: input.categories ?? state.userSettings.categories,
           paymentMethods: input.paymentMethods ?? state.userSettings.paymentMethods,
           investmentTypes: input.investmentTypes ?? state.userSettings.investmentTypes,
@@ -669,11 +671,18 @@ export function PocketFlowProvider({ children }: { children: ReactNode }) {
           assetCategories: input.assetCategories ?? state.userSettings.assetCategories
         };
 
+        let persistedEmail = nextSettings.email;
+        if (trimmedEmail && trimmedEmail !== (user.email ?? state.userSettings.email)) {
+          const { data: authData, error: authError } = await supabase.auth.updateUser({ email: trimmedEmail });
+          if (authError) throw authError;
+          persistedEmail = authData.user?.new_email ?? trimmedEmail;
+        }
+
         const { error } = await supabase.from("user_settings").upsert(
           {
             user_id: user.id,
             profile_name: nextSettings.profileName,
-            email: nextSettings.email,
+            email: persistedEmail,
             currency: nextSettings.currency,
             categories: nextSettings.categories,
             payment_methods: nextSettings.paymentMethods,
@@ -689,24 +698,21 @@ export function PocketFlowProvider({ children }: { children: ReactNode }) {
         const profileUpdate: Record<string, string> = {
           full_name: nextSettings.profileName,
           preferred_currency: nextSettings.currency,
-          email: nextSettings.email
+          email: persistedEmail
         };
         const { error: profileError } = await supabase.from("profiles").update(profileUpdate).eq("id", user.id);
         if (profileError) throw profileError;
 
-        if (nextSettings.email && nextSettings.email !== user.email) {
-          const { error: authError } = await supabase.auth.updateUser({ email: nextSettings.email });
-          if (authError) throw authError;
-        }
+        const syncedSettings = { ...nextSettings, email: persistedEmail };
 
-        setState((prev) => ({ ...prev, userSettings: nextSettings }));
+        setState((prev) => ({ ...prev, userSettings: syncedSettings }));
         setProfile((prev) =>
           prev
             ? {
                 ...prev,
-                fullName: nextSettings.profileName,
-                email: nextSettings.email,
-                preferredCurrency: nextSettings.currency
+                fullName: syncedSettings.profileName,
+                email: syncedSettings.email,
+                preferredCurrency: syncedSettings.currency
               }
             : prev
         );
@@ -816,7 +822,7 @@ export function useDashboardData() {
       .reduce((sum, item) => sum + Math.max(item.amount - item.amountSettled, 0), 0);
 
     const totalInvestments = state.investments.reduce((sum, item) => sum + item.currentValue, 0);
-    const currentBalance = totalIncome - totalExpenses + receivables - payables;
+    const trackedBalance = totalIncome - totalExpenses + receivables - payables;
     const savingsRate = totalIncome > 0 ? ((totalIncome - totalExpenses) / totalIncome) * 100 : 0;
 
     const currentMonthBudgets = state.budgets.filter((budget) => budget.month === monthKey);
@@ -893,7 +899,7 @@ export function useDashboardData() {
     return {
       totalIncome,
       totalExpenses,
-      currentBalance,
+      trackedBalance,
       savingsRate,
       budgetUsed,
       receivables,

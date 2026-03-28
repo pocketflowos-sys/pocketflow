@@ -16,7 +16,7 @@ export const DEFAULT_CATEGORIES = [
 export const DEFAULT_PAYMENT_METHODS = ["UPI", "Bank", "Cash", "Card", "Wallet"];
 export const DEFAULT_INVESTMENT_TYPES = ["Mutual Fund", "Stock", "FD", "Gold", "Crypto", "Other"];
 export const DEFAULT_INVESTMENT_PLATFORMS = ["Groww", "Zerodha", "Upstox", "Bank", "Other"];
-export const DEFAULT_ASSET_CATEGORIES = ["Electronics", "Vehicle", "Property", "Jewellery", "Cash", "Other"];
+export const DEFAULT_ASSET_CATEGORIES = ["Electronics", "Vehicle", "Property", "Jewellery", "Furniture", "Other"];
 
 export const emptyUserSettings: UserSettings = {
   profileName: "",
@@ -27,7 +27,7 @@ export const emptyUserSettings: UserSettings = {
   investmentTypes: DEFAULT_INVESTMENT_TYPES,
   investmentPlatforms: DEFAULT_INVESTMENT_PLATFORMS,
   assetCategories: DEFAULT_ASSET_CATEGORIES,
-  supportEmail: process.env.NEXT_PUBLIC_APP_URL ? "support@pocketflowos.in" : "support@pocketflowos.in"
+  supportEmail: process.env.SUPPORT_EMAIL ?? "support@pocketflowos.in"
 };
 
 export const emptyPocketFlowState: PocketFlowState = {

@@ -1,22 +1,31 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Loader2, LockKeyhole, Mail, UserRound } from "lucide-react";
+import { Eye, EyeOff, Loader2, LockKeyhole, Mail, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { getAuthCallbackUrl } from "@/lib/app-url";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+
+const rememberedEmailKey = "pocketflow:last-email";
 
 export default function SignupPage() {
   const router = useRouter();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/auth/callback`;
+  const callbackUrl = getAuthCallbackUrl();
+
+  useEffect(() => {
+    const remembered = window.localStorage.getItem(rememberedEmailKey);
+    if (remembered) setEmail(remembered);
+  }, []);
 
   async function handleSignup() {
     const supabase = createBrowserSupabaseClient();
@@ -30,16 +39,18 @@ export default function SignupPage() {
         data: { full_name: fullName }
       }
     });
-    setLoading(false);
-    if (error) return setError(error.message);
+    if (error) {
+      setLoading(false);
+      return setError(error.message);
+    }
+    window.localStorage.setItem(rememberedEmailKey, email);
 
     if (data.session) {
-      router.push("/checkout");
-      router.refresh();
+      router.replace("/checkout");
       return;
     }
 
-    router.push("/login?message=Check your email and confirm your account before logging in.");
+    router.replace("/login?message=Check your email and confirm your account before logging in.");
   }
 
   return (
@@ -56,11 +67,30 @@ export default function SignupPage() {
           <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void handleSignup(); }}>
             <Input label="Full name" icon={<UserRound className="h-4 w-4" />} placeholder="Your name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
             <Input label="Email" icon={<Mail className="h-4 w-4" />} placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
-            <Input label="Password" icon={<LockKeyhole className="h-4 w-4" />} placeholder="Choose a secure password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-            <Button type="submit" className="w-full" disabled={loading}>{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Create account</Button>
+            <Input
+              label="Password"
+              icon={<LockKeyhole className="h-4 w-4" />}
+              placeholder="Choose a secure password"
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              rightElement={
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((value) => !value)}
+                  className="text-muted transition hover:text-white"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              }
+            />
+            <Button type="submit" className="w-full gap-2" disabled={loading}>{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{loading ? "Creating account..." : "Create account"}</Button>
+            {loading ? <p className="text-center text-sm text-primary">Creating your account and preparing checkout...</p> : null}
             <Link href="/login" className="block">
               <Button variant="secondary" className="w-full">I already have an account</Button>
             </Link>
+            <p className="text-center text-xs text-muted">By continuing, you agree to the PocketFlow terms, privacy policy, and refund policy.</p>
           </form>
         </Card>
 

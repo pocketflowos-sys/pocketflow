@@ -65,8 +65,8 @@ function buildDefaults(options: QuickAddOptions) {
   };
 }
 
-export function QuickAdd() {
-  const [activeTab, setActiveTab] = useState<Tab>("Transaction");
+export function QuickAdd({ initialTab = "Transaction" as Tab, compact = false }: { initialTab?: Tab; compact?: boolean } = {}) {
+  const [activeTab, setActiveTab] = useState<Tab>(initialTab);
   const { addAsset, addInvestment, addLendBorrowEntry, addTransaction } = usePocketFlow();
   const { categories, paymentMethods, investmentPlatforms, investmentTypes, assetCategories } = usePocketFlowOptions();
   const optionState = useMemo(
@@ -76,6 +76,10 @@ export function QuickAdd() {
   const [formState, setFormState] = useState(() => buildDefaults(optionState));
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
 
   useEffect(() => {
     const defaults = buildDefaults(optionState);
@@ -220,7 +224,7 @@ export function QuickAdd() {
   const assetValues = formState.Asset;
 
   return (
-    <Card className="p-4 md:p-6">
+    <Card className={compact ? "p-4" : "p-4 md:p-6"}>
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <p className="text-xl font-semibold">Quick Add</p>

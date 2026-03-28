@@ -10,17 +10,14 @@ import { Card } from "@/components/ui/card";
 import { FieldShell, InputField, SelectField } from "@/components/ui/form-controls";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
+import { PdfExportButton } from "@/components/ui/pdf-export-button";
 import { SummaryCard } from "@/components/ui/summary-card";
 import { downloadCsv, getInvestmentGain, getInvestmentReturnPercent } from "@/lib/finance";
 import { formatCompactDate, formatCsvDate, formatCurrency } from "@/lib/formatters";
 import { usePocketFlow, usePocketFlowOptions } from "@/lib/pocketflow-store";
 import type { Investment } from "@/lib/types";
 
-const defaultFilters = {
-  search: "",
-  type: "all",
-  platform: "all"
-};
+const defaultFilters = { search: "", type: "all", platform: "all" };
 
 export function InvestmentsPage() {
   const { state, addInvestment, updateInvestment, deleteInvestment } = usePocketFlow();
@@ -31,11 +28,11 @@ export function InvestmentsPage() {
 
   const rows = useMemo(() => {
     return [...state.investments]
-      .map((item) => {
-        const gain = getInvestmentGain(item.currentValue, item.investedAmount, item.withdrawnAmount);
-        const returnPercent = getInvestmentReturnPercent(item.currentValue, item.investedAmount, item.withdrawnAmount);
-        return { ...item, gain, returnPercent };
-      })
+      .map((item) => ({
+        ...item,
+        gain: getInvestmentGain(item.currentValue, item.investedAmount, item.withdrawnAmount),
+        returnPercent: getInvestmentReturnPercent(item.currentValue, item.investedAmount, item.withdrawnAmount)
+      }))
       .sort((a, b) => +new Date(b.date) - +new Date(a.date))
       .filter((item) => {
         const searchTarget = `${item.investmentType} ${item.platform} ${item.notes ?? ""}`.toLowerCase();
@@ -73,125 +70,64 @@ export function InvestmentsPage() {
   }
 
   function handleDelete(id: string) {
-    const confirmed = window.confirm("Delete this investment entry?");
-    if (confirmed) deleteInvestment(id);
+    if (window.confirm("Delete this investment entry?")) deleteInvestment(id);
   }
 
   const allocation = useMemo(() => {
     const map = new Map<string, number>();
-    rows.forEach((item) => {
-      map.set(item.investmentType, (map.get(item.investmentType) ?? 0) + item.currentValue);
-    });
+    rows.forEach((item) => map.set(item.investmentType, (map.get(item.investmentType) ?? 0) + item.currentValue));
     return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
   }, [rows]);
 
   return (
     <AppShell>
       <PageHeader
+        compact
         eyebrow="Portfolio"
         title="Investments"
-        description="Track portfolio value, returns, withdrawn money, and allocation across different investment types."
+        description="Keep holdings readable and light on mobile."
         actions={
           <>
-            <Button variant="secondary" onClick={exportRows} className="gap-2">
-              <Download className="h-4 w-4" />
-              Export CSV
+            <PdfExportButton />
+            <Button variant="secondary" className="gap-2" onClick={exportRows}>
+              <Download className="h-4 w-4" />CSV
             </Button>
             <Button onClick={() => setCreateOpen(true)} className="gap-2">
-              <Plus className="h-4 w-4" />
-              Add investment
+              <Plus className="h-4 w-4" />Add
             </Button>
           </>
         }
       />
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard title="Total invested" value={formatCurrency(summary.totalInvested, state.userSettings.currency)} detail="Capital deployed" tone="gold" icon={<Landmark className="h-5 w-5" />} />
-        <SummaryCard title="Current value" value={formatCurrency(summary.totalCurrentValue, state.userSettings.currency)} detail="Live holdings value" tone="green" />
-        <SummaryCard title="Withdrawn" value={formatCurrency(summary.totalWithdrawn, state.userSettings.currency)} detail="Money already taken out" />
+      <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <SummaryCard title="Invested" value={formatCurrency(summary.totalInvested, state.userSettings.currency)} detail="Capital deployed" tone="gold" icon={<Landmark className="h-5 w-5" />} />
+        <SummaryCard title="Current value" value={formatCurrency(summary.totalCurrentValue, state.userSettings.currency)} detail="Live holdings" tone="green" />
+        <SummaryCard title="Withdrawn" value={formatCurrency(summary.totalWithdrawn, state.userSettings.currency)} detail="Already taken out" />
         <SummaryCard title="Gain / loss" value={formatCurrency(summary.gainLoss, state.userSettings.currency)} detail="Across filtered holdings" tone={summary.gainLoss >= 0 ? "green" : "red"} />
       </section>
 
-      <Card className="mt-6 p-5 md:p-6">
-        <div className="grid gap-4 md:grid-cols-3">
-          <FieldShell label="Search">
-            <InputField value={filters.search} placeholder="Mutual fund, broker, note" onChange={(event) => setFilters((prev) => ({ ...prev, search: event.target.value }))} />
-          </FieldShell>
-          <FieldShell label="Investment type">
-            <SelectField value={filters.type} onChange={(event) => setFilters((prev) => ({ ...prev, type: event.target.value }))}>
-              <option value="all">All</option>
-              {investmentTypes.map((item) => (
-                <option key={item} value={item}>{item}</option>
-              ))}
-            </SelectField>
-          </FieldShell>
-          <FieldShell label="Platform">
-            <SelectField value={filters.platform} onChange={(event) => setFilters((prev) => ({ ...prev, platform: event.target.value }))}>
-              <option value="all">All</option>
-              {investmentPlatforms.map((item) => (
-                <option key={item} value={item}>{item}</option>
-              ))}
-            </SelectField>
-          </FieldShell>
+      <Card className="mt-4 p-4 md:p-6">
+        <div className="grid gap-3 md:grid-cols-3">
+          <FieldShell label="Search"><InputField value={filters.search} placeholder="Mutual fund, broker, note" onChange={(event) => setFilters((prev) => ({ ...prev, search: event.target.value }))} /></FieldShell>
+          <FieldShell label="Investment type"><SelectField value={filters.type} onChange={(event) => setFilters((prev) => ({ ...prev, type: event.target.value }))}><option value="all">All</option>{investmentTypes.map((item) => <option key={item} value={item}>{item}</option>)}</SelectField></FieldShell>
+          <FieldShell label="Platform"><SelectField value={filters.platform} onChange={(event) => setFilters((prev) => ({ ...prev, platform: event.target.value }))}><option value="all">All</option>{investmentPlatforms.map((item) => <option key={item} value={item}>{item}</option>)}</SelectField></FieldShell>
         </div>
       </Card>
 
-      <section className="mt-6 grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-        <div className="grid gap-4">
-          {rows.length === 0 ? (
-            <Card className="p-10 text-center">
-              <p className="text-lg font-semibold">No investments found</p>
-              <p className="mt-2 text-sm text-muted">Try another filter or add a new holding.</p>
-            </Card>
-          ) : null}
-
+      <section className="mt-4 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+        <div className="grid gap-3">
+          {rows.length === 0 ? <Card className="p-8 text-center"><p className="text-lg font-semibold">No investments found</p><p className="mt-2 text-sm text-muted">Try another filter or add a new holding.</p></Card> : null}
           {rows.map((item) => (
-            <Card key={item.id} className="p-5 md:p-6">
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                <div className="flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-lg font-semibold">{item.investmentType}</p>
-                    <Badge tone="neutral">{item.platform}</Badge>
-                    <Badge tone={item.gain >= 0 ? "green" : "red"}>{item.returnPercent.toFixed(1)}%</Badge>
-                  </div>
-
-                  <div className="mt-4 grid gap-3 text-sm text-muted sm:grid-cols-2 lg:grid-cols-4">
-                    <div>
-                      <p>Invested</p>
-                      <p className="mt-1 font-semibold text-white">{formatCurrency(item.investedAmount, state.userSettings.currency)}</p>
-                    </div>
-                    <div>
-                      <p>Current value</p>
-                      <p className="mt-1 font-semibold text-white">{formatCurrency(item.currentValue, state.userSettings.currency)}</p>
-                    </div>
-                    <div>
-                      <p>Withdrawn</p>
-                      <p className="mt-1 font-semibold text-white">{formatCurrency(item.withdrawnAmount, state.userSettings.currency)}</p>
-                    </div>
-                    <div>
-                      <p>Gain / loss</p>
-                      <p className={`mt-1 font-semibold ${item.gain >= 0 ? "text-success" : "text-danger"}`}>{formatCurrency(item.gain, state.userSettings.currency)}</p>
-                    </div>
-                  </div>
-
-                  <p className="mt-4 text-sm text-muted">
-                    Added {formatCompactDate(item.date)}
-                    {item.notes ? ` • ${item.notes}` : ""}
-                  </p>
-                </div>
-
-                <div className="flex flex-col gap-2 sm:flex-row xl:flex-col xl:items-stretch">
-                  <Button variant="secondary" className="gap-2" onClick={() => setEditingItem(item)}>
-                    <PencilLine className="h-4 w-4" />
-                    Edit
-                  </Button>
-                  <Button variant="secondary" className="gap-2 text-danger hover:border-danger/30" onClick={() => handleDelete(item.id)}>
-                    <Trash2 className="h-4 w-4" />
-                    Delete
-                  </Button>
-                </div>
-              </div>
-            </Card>
+            <div key={item.id}>
+              <Card className="p-4 md:hidden">
+                <div className="flex items-start justify-between gap-3"><div><div className="flex items-center gap-2"><p className="font-semibold">{item.investmentType}</p><Badge tone="neutral">{item.platform}</Badge></div><p className="mt-1 text-sm text-muted">Added {formatCompactDate(item.date)}</p></div><Badge tone={item.gain >= 0 ? "green" : "red"}>{item.returnPercent.toFixed(1)}%</Badge></div>
+                <div className="mt-3 grid grid-cols-2 gap-3 text-sm"><div><p className="text-muted">Current value</p><p className="mt-1 text-xl font-semibold">{formatCurrency(item.currentValue, state.userSettings.currency)}</p></div><div><p className="text-muted">Gain / loss</p><p className={`mt-1 text-xl font-semibold ${item.gain >= 0 ? "text-success" : "text-danger"}`}>{formatCurrency(item.gain, state.userSettings.currency)}</p></div></div>
+                <div className="mt-4 flex gap-2"><Button variant="secondary" className="flex-1 gap-2" onClick={() => setEditingItem(item)}><PencilLine className="h-4 w-4" />Edit</Button><Button variant="secondary" className="flex-1 gap-2 text-danger hover:border-danger/30" onClick={() => handleDelete(item.id)}><Trash2 className="h-4 w-4" />Delete</Button></div>
+              </Card>
+              <Card className="hidden p-5 md:block">
+                <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between"><div className="flex-1"><div className="flex flex-wrap items-center gap-2"><p className="text-lg font-semibold">{item.investmentType}</p><Badge tone="neutral">{item.platform}</Badge><Badge tone={item.gain >= 0 ? "green" : "red"}>{item.returnPercent.toFixed(1)}%</Badge></div><div className="mt-4 grid gap-3 text-sm text-muted sm:grid-cols-2 lg:grid-cols-4"><div><p>Invested</p><p className="mt-1 font-semibold text-white">{formatCurrency(item.investedAmount, state.userSettings.currency)}</p></div><div><p>Current value</p><p className="mt-1 font-semibold text-white">{formatCurrency(item.currentValue, state.userSettings.currency)}</p></div><div><p>Withdrawn</p><p className="mt-1 font-semibold text-white">{formatCurrency(item.withdrawnAmount, state.userSettings.currency)}</p></div><div><p>Gain / loss</p><p className={`mt-1 font-semibold ${item.gain >= 0 ? "text-success" : "text-danger"}`}>{formatCurrency(item.gain, state.userSettings.currency)}</p></div></div><p className="mt-4 text-sm text-muted">Added {formatCompactDate(item.date)}{item.notes ? ` • ${item.notes}` : ""}</p></div><div className="flex flex-col gap-2 sm:flex-row xl:flex-col xl:items-stretch"><Button variant="secondary" className="gap-2" onClick={() => setEditingItem(item)}><PencilLine className="h-4 w-4" />Edit</Button><Button variant="secondary" className="gap-2 text-danger hover:border-danger/30" onClick={() => handleDelete(item.id)}><Trash2 className="h-4 w-4" />Delete</Button></div></div>
+              </Card>
+            </div>
           ))}
         </div>
 
@@ -203,13 +139,8 @@ export function InvestmentsPage() {
               const share = summary.totalCurrentValue > 0 ? (value / summary.totalCurrentValue) * 100 : 0;
               return (
                 <div key={name}>
-                  <div className="mb-2 flex items-center justify-between text-sm">
-                    <span>{name}</span>
-                    <span className="text-muted">{share.toFixed(0)}%</span>
-                  </div>
-                  <div className="h-3 overflow-hidden rounded-full bg-white/8">
-                    <div className="h-full rounded-full bg-primary" style={{ width: `${share}%` }} />
-                  </div>
+                  <div className="mb-2 flex items-center justify-between text-sm"><span>{name}</span><span className="text-muted">{share.toFixed(0)}%</span></div>
+                  <div className="h-3 overflow-hidden rounded-full bg-white/8"><div className="h-full rounded-full bg-primary" style={{ width: `${share}%` }} /></div>
                   <p className="mt-2 text-sm text-muted">{formatCurrency(value, state.userSettings.currency)}</p>
                 </div>
               );
@@ -219,34 +150,11 @@ export function InvestmentsPage() {
       </section>
 
       <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="Add investment" description="Save a new portfolio entry.">
-        <InvestmentForm
-          investmentTypeOptions={investmentTypes}
-          platformOptions={investmentPlatforms}
-          submitLabel="Save investment"
-          onCancel={() => setCreateOpen(false)}
-          onSubmit={async (input) => {
-            const saved = await addInvestment(input);
-            if (saved) setCreateOpen(false);
-            return saved;
-          }}
-        />
+        <InvestmentForm investmentTypeOptions={investmentTypes} platformOptions={investmentPlatforms} submitLabel="Save investment" onCancel={() => setCreateOpen(false)} onSubmit={async (input) => { const saved = await addInvestment(input); if (saved) setCreateOpen(false); return saved; }} />
       </Modal>
 
       <Modal open={Boolean(editingItem)} onClose={() => setEditingItem(null)} title="Edit investment" description="Update value, broker, or notes.">
-        {editingItem ? (
-          <InvestmentForm
-            initialValue={editingItem}
-            investmentTypeOptions={investmentTypes}
-            platformOptions={investmentPlatforms}
-            submitLabel="Update investment"
-            onCancel={() => setEditingItem(null)}
-            onSubmit={async (input) => {
-              const saved = await updateInvestment(editingItem.id, input);
-              if (saved) setEditingItem(null);
-              return saved;
-            }}
-          />
-        ) : null}
+        {editingItem ? <InvestmentForm initialValue={editingItem} investmentTypeOptions={investmentTypes} platformOptions={investmentPlatforms} submitLabel="Update investment" onCancel={() => setEditingItem(null)} onSubmit={async (input) => { const saved = await updateInvestment(editingItem.id, input); if (saved) setEditingItem(null); return saved; }} /> : null}
       </Modal>
     </AppShell>
   );

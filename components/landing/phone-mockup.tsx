@@ -13,20 +13,20 @@ const titles: Record<PhoneType, string> = {
 
 export function PhoneMockup({ type }: { type: PhoneType }) {
   return (
-    <div className="relative mx-auto w-[220px]">
+    <div className="relative mx-auto w-[158px] sm:w-[190px] md:w-[220px]">
       <div className="rounded-[40px] border border-white/15 bg-[#060a13] p-2 shadow-glow">
-        <div className="overflow-hidden rounded-[32px] border border-white/8 bg-[#0f1524]">
-          <div className="flex items-center justify-between border-b border-white/6 px-4 py-3 text-[10px] text-muted">
+        <div className="overflow-hidden rounded-[28px] border border-white/8 bg-[#0f1524] sm:rounded-[32px]">
+          <div className="flex items-center justify-between border-b border-white/6 px-3 py-2.5 text-[9px] text-muted sm:px-4 sm:py-3 sm:text-[10px]">
             <span>10:41</span>
             <span>{titles[type]}</span>
             <span>LTE</span>
           </div>
 
-          <div className="space-y-3 p-4">
+          <div className="space-y-2.5 p-3 sm:space-y-3 sm:p-4">
             {type === "dashboard" ? (
               <>
                 <Card className="rounded-[24px] p-4">
-                  <p className="text-xs text-muted">Current balance</p>
+                  <p className="text-xs text-muted">Tracked balance</p>
                   <p className="mt-2 text-3xl font-semibold">₹1.48L</p>
                   <div className="mt-4 h-2 rounded-full bg-white/8">
                     <div className="h-2 w-2/3 rounded-full bg-primary" />
@@ -144,7 +144,7 @@ export function PhoneMockup({ type }: { type: PhoneType }) {
           </div>
         </div>
       </div>
-      <div className="absolute inset-x-0 top-2 mx-auto h-5 w-24 rounded-full bg-black/80" />
+      <div className="absolute inset-x-0 top-2 mx-auto h-4 w-20 rounded-full bg-black/80 sm:h-5 sm:w-24" />
     </div>
   );
 }

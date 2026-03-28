@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldShell, InputField, SelectField } from "@/components/ui/form-controls";
 import { PageHeader } from "@/components/ui/page-header";
+import { PdfExportButton } from "@/components/ui/pdf-export-button";
 import { SummaryCard } from "@/components/ui/summary-card";
 import { usePocketFlow } from "@/lib/pocketflow-store";
 
@@ -101,9 +102,11 @@ export function SettingsPage() {
   return (
     <AppShell>
       <PageHeader
+        compact
         eyebrow="Workspace settings"
         title="Settings"
         description="Manage the defaults that power Quick Add and every full page across your live workspace."
+        actions={<PdfExportButton />}
       />
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -132,6 +135,7 @@ export function SettingsPage() {
             <FieldShell label="Email">
               <InputField type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
             </FieldShell>
+            <p className="-mt-2 text-xs text-muted">If you change your email, Supabase may ask you to confirm the new address before it becomes fully active.</p>
             <FieldShell label="Support email">
               <InputField type="email" value={supportEmail} onChange={(event) => setSupportEmail(event.target.value)} />
             </FieldShell>
@@ -161,7 +165,7 @@ export function SettingsPage() {
         </Card>
       </section>
 
-      <section className="mt-6 grid gap-6 lg:grid-cols-2">
+      <section className="mt-6 grid gap-6 md:grid-cols-2">
         <ListManager
           title="Categories"
           description="Used in transaction and budget forms."
