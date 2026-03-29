@@ -112,8 +112,9 @@ create index if not exists assets_user_id_purchase_date_idx on public.assets(use
 create table if not exists public.payments (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
-  razorpay_order_id text not null unique,
-  razorpay_payment_id text unique,
+  provider text not null default 'cashfree',
+  provider_order_id text not null unique,
+  provider_payment_id text unique,
   amount numeric(12,2) not null,
   currency text not null default 'INR',
   status text not null default 'created',
@@ -124,6 +125,7 @@ create table if not exists public.payments (
 );
 
 create index if not exists payments_user_id_idx on public.payments(user_id);
+create index if not exists payments_user_id_created_at_idx on public.payments(user_id, created_at desc);
 
 create or replace function public.handle_new_user()
 returns trigger

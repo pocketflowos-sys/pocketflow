@@ -10,7 +10,7 @@ export default function SuccessPage() {
         <CheckCircle2 className="mx-auto h-14 w-14 text-success" />
         <h1 className="mt-6 text-4xl font-semibold">Payment received</h1>
         <p className="mt-4 text-lg text-muted">
-          Your payment has been verified. If the webhook takes a moment to update your profile, just reopen the dashboard after a short refresh.
+          Your payment has been verified. If the payment status takes a moment to update your profile, just reopen the dashboard after a short refresh.
         </p>
         <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
           <Link href="/dashboard">

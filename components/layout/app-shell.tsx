@@ -49,7 +49,7 @@ const pageMeta: Record<string, { title: string; subtitle: string }> = {
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { profile, state, syncing, signOut } = usePocketFlow();
+  const { profile, state, loading, syncing, signOut } = usePocketFlow();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [navLoading, setNavLoading] = useState(false);
   const page = pageMeta[pathname] ?? { title: "PocketFlow", subtitle: "Private workspace" };
@@ -62,6 +62,20 @@ export function AppShell({ children }: { children: ReactNode }) {
   async function handleSignOut() {
     await signOut();
     router.replace("/login");
+  }
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-4 py-10">
+        <div className="w-full max-w-md rounded-[28px] border border-white/10 bg-white/[0.04] p-8 text-center shadow-glow">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-[20px] bg-primary/12 text-primary">
+            <Loader2 className="h-6 w-6 animate-spin" />
+          </div>
+          <h2 className="mt-5 text-2xl font-semibold">Loading your workspace</h2>
+          <p className="mt-3 text-sm text-muted">Fetching your latest data and preparing the app shell...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -102,7 +116,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <ShieldCheck className="h-4 w-4" /> Paid access connected
             </p>
             <p className="mt-2 text-sm text-muted">
-              Protected routes, real Supabase storage, and Razorpay webhook access control are wired in this build.
+              Protected routes, real Supabase storage, and Cashfree payment access control are wired in this build.
             </p>
           </div>
         </aside>
@@ -131,7 +145,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </div>
                 <Button variant="secondary" onClick={handleSignOut} className="hidden gap-2 sm:inline-flex">
                   {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
-                  {syncing ? "Saving..." : "Sign out"}
+                  {syncing ? "Working..." : "Sign out"}
                 </Button>
                 <Button
                   variant="secondary"

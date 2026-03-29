@@ -20,16 +20,31 @@ export default function SignupPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const callbackUrl = getAuthCallbackUrl();
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const callbackUrl = `${getAuthCallbackUrl()}?next=/checkout`;
 
   useEffect(() => {
     const remembered = window.localStorage.getItem(rememberedEmailKey);
     if (remembered) setEmail(remembered);
   }, []);
 
+
+  async function handleGoogleSignup() {
+    const supabase = createBrowserSupabaseClient();
+    setGoogleLoading(true);
+    setLoading(false);
+    setError("");
+    const { error } = await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: callbackUrl } });
+    if (error) {
+      setGoogleLoading(false);
+      setError(error.message);
+    }
+  }
+
   async function handleSignup() {
     const supabase = createBrowserSupabaseClient();
     setLoading(true);
+    setGoogleLoading(false);
     setError("");
     const { data, error } = await supabase.auth.signUp({
       email,
@@ -85,8 +100,13 @@ export default function SignupPage() {
                 </button>
               }
             />
-            <Button type="submit" className="w-full gap-2" disabled={loading}>{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{loading ? "Creating account..." : "Create account"}</Button>
+            <Button type="submit" className="w-full gap-2" disabled={loading || googleLoading}>{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{loading ? "Creating account..." : "Create account"}</Button>
             {loading ? <p className="text-center text-sm text-primary">Creating your account and preparing checkout...</p> : null}
+            <Button type="button" variant="secondary" className="w-full gap-2" onClick={() => void handleGoogleSignup()} disabled={loading || googleLoading}>
+              {googleLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {googleLoading ? "Redirecting to Google..." : "Continue with Google"}
+            </Button>
+            {googleLoading ? <p className="text-center text-sm text-primary">Taking you to Google sign in...</p> : null}
             <Link href="/login" className="block">
               <Button variant="secondary" className="w-full">I already have an account</Button>
             </Link>
@@ -104,7 +124,7 @@ export default function SignupPage() {
           </p>
           <div className="mt-8 rounded-3xl border border-primary/20 bg-primary/10 p-6">
             <p className="text-3xl font-semibold">₹99</p>
-            <p className="mt-2 text-muted">One-time payment. Instant access after Razorpay verification. No monthly subscription.</p>
+            <p className="mt-2 text-muted">One-time payment. Instant access after Cashfree verification. No monthly subscription.</p>
           </div>
         </section>
       </div>

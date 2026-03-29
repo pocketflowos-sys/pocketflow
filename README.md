@@ -1,8 +1,8 @@
-# PocketFlow Production Starter
+# PocketFlow Production Starter (Cashfree Edition)
 
-This build takes the earlier PocketFlow prototype and moves it into a real product-ready structure.
+This build moves PocketFlow into a real product-ready structure with Supabase auth, paid-access gating, and Cashfree checkout.
 
-## What is now included
+## What is included
 
 - real Supabase auth structure
 - protected app routes
@@ -14,9 +14,9 @@ This build takes the earlier PocketFlow prototype and moves it into a real produ
   - investments
   - assets
   - user settings
-- Razorpay order creation
-- Razorpay payment verification route
-- Razorpay webhook route
+- Cashfree order creation route
+- Cashfree payment verification route
+- Cashfree webhook route
 - Brevo transactional email hook
 - polished app shell with sign-out and refresh
 - `.gitignore` ready for GitHub / Vercel
@@ -35,9 +35,12 @@ Required values:
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `NEXT_PUBLIC_RAZORPAY_KEY_ID`
-- `RAZORPAY_KEY_SECRET`
-- `RAZORPAY_WEBHOOK_SECRET`
+- `NEXT_PUBLIC_CASHFREE_CLIENT_ID`
+- `CASHFREE_CLIENT_ID`
+- `CASHFREE_CLIENT_SECRET`
+- `CASHFREE_WEBHOOK_SECRET`
+- `CASHFREE_ENV`
+- `NEXT_PUBLIC_CASHFREE_ENV`
 - `BREVO_API_KEY`
 - `EMAIL_FROM`
 - `SUPPORT_EMAIL`
@@ -45,11 +48,12 @@ Required values:
 ## Supabase setup
 
 1. Open Supabase SQL Editor.
-2. Run `supabase/schema.sql`.
-3. Create one real user account in the app.
-4. Copy that user UUID from `auth.users`.
-5. Replace `replace-with-real-user-uuid` inside `supabase/seed.sql`.
-6. Run `supabase/seed.sql`.
+2. Run `supabase/schema.sql` for a fresh database.
+3. If you are upgrading an existing project, run `supabase/migrations/20260329_cashfree_switch.sql`.
+4. Create one real user account in the app.
+5. Copy that user UUID from `auth.users`.
+6. Replace `replace-with-real-user-uuid` inside `supabase/seed.sql`.
+7. Run `supabase/seed.sql`.
 
 ## Auth flow
 
@@ -59,17 +63,24 @@ Required values:
 - unpaid users are redirected to `/checkout`
 - paid users are allowed into the full app
 
-## Razorpay flow
+## Cashfree flow
 
-- `/api/razorpay/create-order` creates a live test order and stores a `payments` row
-- `/api/razorpay/verify` verifies the payment signature and activates the profile
-- `/api/razorpay/webhook` supports the production webhook callback
+- `/api/cashfree/create-order` creates an order and stores a `payments` row
+- `/api/cashfree/verify` checks the final order status from your backend and activates the profile once the order is `PAID`
+- `/api/cashfree/webhook` supports asynchronous payment status updates from Cashfree
 
 Recommended webhook URL:
 
 ```text
-https://your-domain.com/api/razorpay/webhook
+https://your-domain.com/api/cashfree/webhook
 ```
+
+## Cashfree dashboard checklist
+
+- add your domain to Cashfree domain whitelisting
+- use sandbox keys first
+- add your production webhook URL after testing
+- keep the webhook secret in Vercel server environment variables only
 
 ## Brevo
 
@@ -94,12 +105,13 @@ npm run dev
 3. Add the same env variables in Vercel Project Settings
 4. Deploy
 5. Add your custom domain
-6. Add the webhook URL in Razorpay
+6. Add the webhook URL in Cashfree
+7. Whitelist your production domain in Cashfree
 
 ## Important notes
 
 - rotate any secrets that were previously shared in chat
 - do not commit `.env.local`
-- use Razorpay **test keys** first
 - verify Brevo domain authentication before sending live emails
-- keep `SUPABASE_SERVICE_ROLE_KEY` server-only
+- keep `SUPABASE_SERVICE_ROLE_KEY`, `CASHFREE_CLIENT_SECRET`, and `CASHFREE_WEBHOOK_SECRET` server-only
+- verify payments on the server before unlocking access

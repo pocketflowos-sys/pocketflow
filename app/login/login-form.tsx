@@ -21,7 +21,7 @@ export function LoginForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const callbackUrl = getAuthCallbackUrl();
+  const callbackUrl = `${getAuthCallbackUrl()}?next=/dashboard`;
 
   useEffect(() => {
     const remembered = window.localStorage.getItem(rememberedEmailKey);

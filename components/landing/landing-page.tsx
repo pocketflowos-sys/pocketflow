@@ -468,7 +468,7 @@ export function LandingPage() {
                   {[
                     "Access unlocks automatically after payment verification",
                     "No subscription",
-                    "Razorpay order creation, verification, and webhook handling included",
+                    "Cashfree order creation, verification, and webhook handling included",
                     "Built for mobile and desktop",
                     "Supabase-backed dashboard with protected routes"
                   ].map((item) => (
