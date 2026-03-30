@@ -181,10 +181,24 @@ export type PaymentRecord = {
   createdAt: string;
 };
 
+export type LoadedScope =
+  | "empty"
+  | "dashboard"
+  | "transactions"
+  | "lend-borrow"
+  | "credit-cards"
+  | "loans"
+  | "investments"
+  | "assets"
+  | "categories"
+  | "settings"
+  | "budgets"
+  | "full";
+
 export type PocketFlowContextValue = {
   state: PocketFlowState;
   dashboardSnapshot: DashboardSnapshot | null;
-  loadedScope: "empty" | "dashboard" | "full";
+  loadedScope: LoadedScope;
   profile: Profile | null;
   authEmail: string;
   authName: string;
