@@ -7,6 +7,7 @@ import { InvestmentForm } from "@/components/investments/investment-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { FilterPanel } from "@/components/ui/filter-panel";
 import { FieldShell, InputField, SelectField } from "@/components/ui/form-controls";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
@@ -51,6 +52,18 @@ export function InvestmentsPage() {
     return { totalInvested, totalCurrentValue, totalWithdrawn, gainLoss };
   }, [rows]);
 
+  const allocation = useMemo(() => {
+    const map = new Map<string, number>();
+    rows.forEach((item) => map.set(item.investmentType, (map.get(item.investmentType) ?? 0) + item.currentValue));
+    return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
+  }, [rows]);
+
+  const hasActiveFilters = Boolean(filters.search || filters.type !== "all" || filters.platform !== "all");
+
+  function resetFilters() {
+    setFilters(defaultFilters);
+  }
+
   function exportRows() {
     downloadCsv(
       "pocketflow-investments.csv",
@@ -72,12 +85,6 @@ export function InvestmentsPage() {
   function handleDelete(id: string) {
     if (window.confirm("Delete this investment entry?")) deleteInvestment(id);
   }
-
-  const allocation = useMemo(() => {
-    const map = new Map<string, number>();
-    rows.forEach((item) => map.set(item.investmentType, (map.get(item.investmentType) ?? 0) + item.currentValue));
-    return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
-  }, [rows]);
 
   return (
     <AppShell>
@@ -106,13 +113,23 @@ export function InvestmentsPage() {
         <SummaryCard title="Gain / loss" value={formatCurrency(summary.gainLoss, state.userSettings.currency)} detail="Across filtered holdings" tone={summary.gainLoss >= 0 ? "green" : "red"} />
       </section>
 
-      <Card className="mt-4 p-4 md:p-6">
-        <div className="grid gap-3 md:grid-cols-3">
-          <FieldShell label="Search"><InputField value={filters.search} placeholder="Mutual fund, broker, note" onChange={(event) => setFilters((prev) => ({ ...prev, search: event.target.value }))} /></FieldShell>
+      <FilterPanel
+        title="Investment filters"
+        hasActiveFilters={hasActiveFilters}
+        onClear={resetFilters}
+        summary={[
+          filters.search && `Search: ${filters.search}`,
+          filters.type !== "all" && `Type: ${filters.type}`,
+          filters.platform !== "all" && `Platform: ${filters.platform}`
+        ]}
+      >
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+          <FieldShell label="Search" className="col-span-2 md:col-span-1"><InputField value={filters.search} placeholder="Mutual fund, broker, note" onChange={(event) => setFilters((prev) => ({ ...prev, search: event.target.value }))} /></FieldShell>
           <FieldShell label="Investment type"><SelectField value={filters.type} onChange={(event) => setFilters((prev) => ({ ...prev, type: event.target.value }))}><option value="all">All</option>{investmentTypes.map((item) => <option key={item} value={item}>{item}</option>)}</SelectField></FieldShell>
           <FieldShell label="Platform"><SelectField value={filters.platform} onChange={(event) => setFilters((prev) => ({ ...prev, platform: event.target.value }))}><option value="all">All</option>{investmentPlatforms.map((item) => <option key={item} value={item}>{item}</option>)}</SelectField></FieldShell>
         </div>
-      </Card>
+        {hasActiveFilters ? <div className="mt-4 hidden md:block"><Button variant="ghost" onClick={resetFilters}>Clear filters</Button></div> : null}
+      </FilterPanel>
 
       <section className="mt-4 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
         <div className="grid gap-3">
@@ -121,11 +138,11 @@ export function InvestmentsPage() {
             <div key={item.id}>
               <Card className="p-4 md:hidden">
                 <div className="flex items-start justify-between gap-3"><div><div className="flex items-center gap-2"><p className="font-semibold">{item.investmentType}</p><Badge tone="neutral">{item.platform}</Badge></div><p className="mt-1 text-sm text-muted">Added {formatCompactDate(item.date)}</p></div><Badge tone={item.gain >= 0 ? "green" : "red"}>{item.returnPercent.toFixed(1)}%</Badge></div>
-                <div className="mt-3 grid grid-cols-2 gap-3 text-sm"><div><p className="text-muted">Current value</p><p className="mt-1 text-xl font-semibold">{formatCurrency(item.currentValue, state.userSettings.currency)}</p></div><div><p className="text-muted">Gain / loss</p><p className={`mt-1 text-xl font-semibold ${item.gain >= 0 ? "text-success" : "text-danger"}`}>{formatCurrency(item.gain, state.userSettings.currency)}</p></div></div>
+                <div className="mt-3 grid grid-cols-2 gap-3 text-sm"><div><p className="text-muted">Current value</p><p className="mt-1 text-xl font-semibold tabular-nums">{formatCurrency(item.currentValue, state.userSettings.currency)}</p></div><div className="text-right"><p className="text-muted">Gain / loss</p><p className={`mt-1 text-xl font-semibold tabular-nums ${item.gain >= 0 ? "text-success" : "text-danger"}`}>{formatCurrency(item.gain, state.userSettings.currency)}</p></div></div>
                 <div className="mt-4 flex gap-2"><Button variant="secondary" className="flex-1 gap-2" onClick={() => setEditingItem(item)}><PencilLine className="h-4 w-4" />Edit</Button><Button variant="secondary" className="flex-1 gap-2 text-danger hover:border-danger/30" onClick={() => handleDelete(item.id)}><Trash2 className="h-4 w-4" />Delete</Button></div>
               </Card>
               <Card className="hidden p-5 md:block">
-                <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between"><div className="flex-1"><div className="flex flex-wrap items-center gap-2"><p className="text-lg font-semibold">{item.investmentType}</p><Badge tone="neutral">{item.platform}</Badge><Badge tone={item.gain >= 0 ? "green" : "red"}>{item.returnPercent.toFixed(1)}%</Badge></div><div className="mt-4 grid gap-3 text-sm text-muted sm:grid-cols-2 lg:grid-cols-4"><div><p>Invested</p><p className="mt-1 font-semibold text-white">{formatCurrency(item.investedAmount, state.userSettings.currency)}</p></div><div><p>Current value</p><p className="mt-1 font-semibold text-white">{formatCurrency(item.currentValue, state.userSettings.currency)}</p></div><div><p>Withdrawn</p><p className="mt-1 font-semibold text-white">{formatCurrency(item.withdrawnAmount, state.userSettings.currency)}</p></div><div><p>Gain / loss</p><p className={`mt-1 font-semibold ${item.gain >= 0 ? "text-success" : "text-danger"}`}>{formatCurrency(item.gain, state.userSettings.currency)}</p></div></div><p className="mt-4 text-sm text-muted">Added {formatCompactDate(item.date)}{item.notes ? ` • ${item.notes}` : ""}</p></div><div className="flex flex-col gap-2 sm:flex-row xl:flex-col xl:items-stretch"><Button variant="secondary" className="gap-2" onClick={() => setEditingItem(item)}><PencilLine className="h-4 w-4" />Edit</Button><Button variant="secondary" className="gap-2 text-danger hover:border-danger/30" onClick={() => handleDelete(item.id)}><Trash2 className="h-4 w-4" />Delete</Button></div></div>
+                <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between"><div className="flex-1"><div className="flex flex-wrap items-center gap-2"><p className="text-lg font-semibold">{item.investmentType}</p><Badge tone="neutral">{item.platform}</Badge><Badge tone={item.gain >= 0 ? "green" : "red"}>{item.returnPercent.toFixed(1)}%</Badge></div><div className="mt-4 grid gap-3 text-sm text-muted sm:grid-cols-2 lg:grid-cols-4"><div><p>Invested</p><p className="mt-1 font-semibold tabular-nums text-white">{formatCurrency(item.investedAmount, state.userSettings.currency)}</p></div><div><p>Current value</p><p className="mt-1 font-semibold tabular-nums text-white">{formatCurrency(item.currentValue, state.userSettings.currency)}</p></div><div><p>Withdrawn</p><p className="mt-1 font-semibold tabular-nums text-white">{formatCurrency(item.withdrawnAmount, state.userSettings.currency)}</p></div><div><p>Gain / loss</p><p className={`mt-1 font-semibold tabular-nums ${item.gain >= 0 ? "text-success" : "text-danger"}`}>{formatCurrency(item.gain, state.userSettings.currency)}</p></div></div><p className="mt-4 text-sm text-muted">Added {formatCompactDate(item.date)}{item.notes ? ` • ${item.notes}` : ""}</p></div><div className="flex flex-col gap-2 sm:flex-row xl:flex-col xl:items-stretch"><Button variant="secondary" className="gap-2" onClick={() => setEditingItem(item)}><PencilLine className="h-4 w-4" />Edit</Button><Button variant="secondary" className="gap-2 text-danger hover:border-danger/30" onClick={() => handleDelete(item.id)}><Trash2 className="h-4 w-4" />Delete</Button></div></div>
               </Card>
             </div>
           ))}
@@ -139,9 +156,9 @@ export function InvestmentsPage() {
               const share = summary.totalCurrentValue > 0 ? (value / summary.totalCurrentValue) * 100 : 0;
               return (
                 <div key={name}>
-                  <div className="mb-2 flex items-center justify-between text-sm"><span>{name}</span><span className="text-muted">{share.toFixed(0)}%</span></div>
+                  <div className="mb-2 flex items-center justify-between text-sm"><span>{name}</span><span className="tabular-nums text-muted">{share.toFixed(0)}%</span></div>
                   <div className="h-3 overflow-hidden rounded-full bg-white/8"><div className="h-full rounded-full bg-primary" style={{ width: `${share}%` }} /></div>
-                  <p className="mt-2 text-sm text-muted">{formatCurrency(value, state.userSettings.currency)}</p>
+                  <p className="mt-2 text-sm text-muted tabular-nums">{formatCurrency(value, state.userSettings.currency)}</p>
                 </div>
               );
             })}

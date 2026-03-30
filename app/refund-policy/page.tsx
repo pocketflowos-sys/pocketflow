@@ -11,10 +11,10 @@ export default function RefundPolicyPage() {
           <p className="mt-4 text-sm text-muted">PocketFlow is sold as a one-time access digital product.</p>
         </Card>
 
-        <Card className="space-y-4 p-6 md:p-8 text-sm text-muted">
-          <p><strong className="text-white">General rule:</strong> because access is delivered digitally after payment verification, refunds are usually not issued once the account has been unlocked.</p>
-          <p><strong className="text-white">Exceptions:</strong> duplicate charges, technical activation failures, or mistaken billing issues can be reviewed case by case.</p>
-          <p><strong className="text-white">How to request help:</strong> contact PocketFlow support with your payment email, approximate payment time, and the issue you faced.</p>
+        <Card className="space-y-4 p-6 text-sm text-muted md:p-8">
+          <p><strong className="text-white">General rule:</strong> because access is delivered instantly after payment verification, there is no refund after payment in normal cases.</p>
+          <p><strong className="text-white">Support promise:</strong> if the promised access or service is not provided properly, contact support and the issue will be reviewed.</p>
+          <p><strong className="text-white">Typical review cases:</strong> duplicate charges, technical activation failures, or mistaken billing issues.</p>
           <p><Link href="/support" className="text-primary">Go to support</Link></p>
         </Card>
       </div>

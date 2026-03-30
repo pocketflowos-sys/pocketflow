@@ -3,15 +3,25 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { Route } from "next";
+import { Paperclip, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { FieldShell, InputField, SelectField, TextareaField } from "@/components/ui/form-controls";
+import { ComboField, FieldShell, InputField, TextareaField } from "@/components/ui/form-controls";
 import { getTodayIso } from "@/lib/formatters";
 import { usePocketFlow, usePocketFlowOptions } from "@/lib/pocketflow-store";
 import { cn } from "@/lib/utils";
+import { formatFileSize } from "@/lib/transaction-proofs";
 
 const tabs = ["Transaction", "Lend/Borrow", "Investment", "Asset"] as const;
 type Tab = (typeof tabs)[number];
+
+type QuickAddPreset = {
+  transactionType?: "income" | "expense";
+  category?: string;
+  lendBorrowType?: "given" | "borrowed";
+  investmentType?: string;
+  assetCategory?: string;
+};
 
 type QuickAddOptions = {
   categories: string[];
@@ -25,21 +35,21 @@ function firstOrFallback(values: string[], fallback: string) {
   return values[0] ?? fallback;
 }
 
-function buildDefaults(options: QuickAddOptions) {
+function buildDefaults(options: QuickAddOptions, preset?: QuickAddPreset) {
   return {
     Transaction: {
       date: getTodayIso(),
-      type: "expense",
+      type: preset?.transactionType ?? "expense",
       title: "",
-      category: firstOrFallback(options.categories, "Food"),
+      category: preset?.category ?? "",
       amount: "",
-      paymentMethod: firstOrFallback(options.paymentMethods, "UPI"),
+      paymentMethod: "",
       notes: ""
     },
     "Lend/Borrow": {
       date: getTodayIso(),
       person: "",
-      kind: "given",
+      kind: preset?.lendBorrowType ?? "given",
       amount: "",
       settled: "",
       dueDate: "",
@@ -47,7 +57,7 @@ function buildDefaults(options: QuickAddOptions) {
     },
     Investment: {
       date: getTodayIso(),
-      investmentType: firstOrFallback(options.investmentTypes, "Mutual Fund"),
+      investmentType: preset?.investmentType ?? firstOrFallback(options.investmentTypes, "Mutual Fund"),
       platform: firstOrFallback(options.investmentPlatforms, "Groww"),
       investedAmount: "",
       currentValue: "",
@@ -57,7 +67,7 @@ function buildDefaults(options: QuickAddOptions) {
     Asset: {
       date: getTodayIso(),
       assetName: "",
-      assetCategory: firstOrFallback(options.assetCategories, "Electronics"),
+      assetCategory: preset?.assetCategory ?? firstOrFallback(options.assetCategories, "Electronics"),
       purchaseCost: "",
       currentValue: "",
       notes: ""
@@ -65,50 +75,85 @@ function buildDefaults(options: QuickAddOptions) {
   };
 }
 
-export function QuickAdd({ initialTab = "Transaction" as Tab, compact = false }: { initialTab?: Tab; compact?: boolean } = {}) {
+function ChoiceChips<T extends string>({
+  value,
+  onChange,
+  options,
+  columns = 2
+}: {
+  value: T;
+  onChange: (value: T) => void;
+  options: Array<{ value: T; label: string; helper?: string }>;
+  columns?: 2 | 3;
+}) {
+  return (
+    <div className={cn("grid gap-2", columns === 3 ? "grid-cols-3" : "grid-cols-2")}>
+      {options.map((option) => {
+        const active = option.value === value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => onChange(option.value)}
+            className={cn(
+              "rounded-2xl border px-4 py-3 text-left transition",
+              active
+                ? "border-primary/50 bg-primary text-black shadow-[0_10px_30px_rgba(247,199,51,0.18)]"
+                : "border-white/10 bg-white/[0.04] text-white hover:border-white/20 hover:bg-white/[0.06]"
+            )}
+            aria-pressed={active}
+          >
+            <div className="text-sm font-semibold">{option.label}</div>
+            {option.helper ? (
+              <div className={cn("mt-1 text-xs", active ? "text-black/70" : "text-muted")}>
+                {option.helper}
+              </div>
+            ) : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export function QuickAdd({
+  initialTab = "Transaction" as Tab,
+  compact = false,
+  preset,
+  onSuccess
+}: {
+  initialTab?: Tab;
+  compact?: boolean;
+  preset?: QuickAddPreset;
+  onSuccess?: () => void;
+} = {}) {
   const [activeTab, setActiveTab] = useState<Tab>(initialTab);
-  const { addAsset, addInvestment, addLendBorrowEntry, addTransaction } = usePocketFlow();
+  const { addAsset, addInvestment, addLendBorrowEntry, addTransaction, operationError, clearOperationError } = usePocketFlow();
   const { categories, paymentMethods, investmentPlatforms, investmentTypes, assetCategories } = usePocketFlowOptions();
   const optionState = useMemo(
     () => ({ categories, paymentMethods, investmentPlatforms, investmentTypes, assetCategories }),
     [assetCategories, categories, investmentPlatforms, investmentTypes, paymentMethods]
   );
-  const [formState, setFormState] = useState(() => buildDefaults(optionState));
+  const [formState, setFormState] = useState(() => buildDefaults(optionState, preset));
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
+  const [transactionProofFile, setTransactionProofFile] = useState<File | null>(null);
 
   useEffect(() => {
     setActiveTab(initialTab);
   }, [initialTab]);
 
   useEffect(() => {
-    const defaults = buildDefaults(optionState);
     setFormState((prev) => ({
-      Transaction: {
-        ...prev.Transaction,
-        category: categories.includes(prev.Transaction.category) ? prev.Transaction.category : defaults.Transaction.category,
-        paymentMethod: paymentMethods.includes(prev.Transaction.paymentMethod)
-          ? prev.Transaction.paymentMethod
-          : defaults.Transaction.paymentMethod
-      },
-      "Lend/Borrow": prev["Lend/Borrow"],
-      Investment: {
-        ...prev.Investment,
-        investmentType: investmentTypes.includes(prev.Investment.investmentType)
-          ? prev.Investment.investmentType
-          : defaults.Investment.investmentType,
-        platform: investmentPlatforms.includes(prev.Investment.platform)
-          ? prev.Investment.platform
-          : defaults.Investment.platform
-      },
-      Asset: {
-        ...prev.Asset,
-        assetCategory: assetCategories.includes(prev.Asset.assetCategory)
-          ? prev.Asset.assetCategory
-          : defaults.Asset.assetCategory
-      }
+      ...prev,
+      ...buildDefaults(optionState, preset)
     }));
-  }, [assetCategories, categories, investmentPlatforms, investmentTypes, optionState, paymentMethods]);
+  }, [optionState, preset]);
+
+  useEffect(() => {
+    if (!operationError) return;
+    setError(operationError);
+  }, [operationError]);
 
   const setValue = (name: string, value: string) => {
     setFormState((prev) => ({
@@ -121,24 +166,49 @@ export function QuickAdd({ initialTab = "Transaction" as Tab, compact = false }:
   };
 
   const resetCurrentTab = () => {
-    const defaults = buildDefaults(optionState);
+    const defaults = buildDefaults(optionState, preset);
     setFormState((prev) => ({
       ...prev,
       [activeTab]: defaults[activeTab]
     }));
+    if (activeTab === "Transaction") {
+      clearTransactionProof();
+    }
   };
 
   const showMessage = (message: string) => {
+    clearOperationError();
+    setError("");
     setSuccess(message);
     setTimeout(() => setSuccess(""), 2400);
   };
 
   const fail = (message: string) => {
+    setSuccess("");
     setError(message);
-    setTimeout(() => setError(""), 2400);
+    setTimeout(() => setError(""), 3200);
+  };
+
+  const handleProofFileChange = (file: File | null) => {
+    if (!file) return;
+    const isAllowed = file.type.startsWith("image/") || file.type === "application/pdf";
+    if (!isAllowed) {
+      fail("Attach an image, screenshot, or PDF proof file.");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      fail("Keep the proof file under 10 MB.");
+      return;
+    }
+    setTransactionProofFile(file);
+  };
+
+  const clearTransactionProof = () => {
+    setTransactionProofFile(null);
   };
 
   const handleSubmit = async () => {
+    clearOperationError();
     setError("");
 
     if (activeTab === "Transaction") {
@@ -151,11 +221,15 @@ export function QuickAdd({ initialTab = "Transaction" as Tab, compact = false }:
         category: data.category.trim(),
         amount: Number(data.amount),
         paymentMethod: data.paymentMethod.trim(),
-        notes: data.notes.trim()
+        notes: data.notes.trim(),
+        proofFile: transactionProofFile
       });
-      if (!saved) return;
+      if (!saved) return fail(operationError || "We could not save this transaction.");
       resetCurrentTab();
-      return showMessage("Transaction added to dashboard.");
+      clearTransactionProof();
+      showMessage(transactionProofFile ? "Transaction and proof saved." : "Transaction added.");
+      onSuccess?.();
+      return;
     }
 
     if (activeTab === "Lend/Borrow") {
@@ -170,9 +244,11 @@ export function QuickAdd({ initialTab = "Transaction" as Tab, compact = false }:
         dueDate: data.dueDate || undefined,
         notes: data.notes.trim()
       });
-      if (!saved) return;
+      if (!saved) return fail(operationError || "We could not save this lend / borrow entry.");
       resetCurrentTab();
-      return showMessage("Lend / borrow entry added.");
+      showMessage("Lend / borrow entry added.");
+      onSuccess?.();
+      return;
     }
 
     if (activeTab === "Investment") {
@@ -189,9 +265,11 @@ export function QuickAdd({ initialTab = "Transaction" as Tab, compact = false }:
         withdrawnAmount: Number(data.withdrawnAmount || 0),
         notes: data.notes.trim()
       });
-      if (!saved) return;
+      if (!saved) return fail(operationError || "We could not save this investment.");
       resetCurrentTab();
-      return showMessage("Investment saved.");
+      showMessage("Investment saved.");
+      onSuccess?.();
+      return;
     }
 
     const data = formState.Asset;
@@ -206,9 +284,10 @@ export function QuickAdd({ initialTab = "Transaction" as Tab, compact = false }:
       currentValue: Number(data.currentValue),
       notes: data.notes.trim()
     });
-    if (!saved) return;
+    if (!saved) return fail(operationError || "We could not save this asset.");
     resetCurrentTab();
     showMessage("Asset added.");
+    onSuccess?.();
   };
 
   const links: Record<Tab, Route> = {
@@ -228,21 +307,7 @@ export function QuickAdd({ initialTab = "Transaction" as Tab, compact = false }:
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <p className="text-xl font-semibold">Quick Add</p>
-          <p className="mt-1 text-sm text-muted">
-            Save entries fast, then jump to the full page whenever you need deeper control.
-          </p>
-        </div>
-        <div className="flex flex-col gap-2 md:items-end">
-          {success ? (
-            <div className="rounded-full border border-success/30 bg-success/10 px-4 py-2 text-sm text-success">
-              {success}
-            </div>
-          ) : null}
-          {error ? (
-            <div className="rounded-full border border-danger/30 bg-danger/10 px-4 py-2 text-sm text-danger">
-              {error}
-            </div>
-          ) : null}
+          <p className="mt-1 text-sm text-muted">Save entries fast, then open the full page whenever you need deeper control.</p>
         </div>
       </div>
 
@@ -253,9 +318,7 @@ export function QuickAdd({ initialTab = "Transaction" as Tab, compact = false }:
             onClick={() => setActiveTab(tab)}
             className={cn(
               "rounded-2xl px-3 py-3 text-sm font-medium transition",
-              tab === activeTab
-                ? "bg-primary text-black"
-                : "text-muted hover:bg-white/5 hover:text-white"
+              tab === activeTab ? "bg-primary text-black" : "text-muted hover:bg-white/5 hover:text-white"
             )}
           >
             {tab}
@@ -263,152 +326,111 @@ export function QuickAdd({ initialTab = "Transaction" as Tab, compact = false }:
         ))}
       </div>
 
-      {activeTab === "Transaction" ? (
-        <div className="mt-5 grid gap-4 sm:grid-cols-2">
-          <FieldShell label="Date">
-            <InputField type="date" value={transactionValues.date} onChange={(event) => setValue("date", event.target.value)} />
-          </FieldShell>
-          <FieldShell label="Type">
-            <SelectField value={transactionValues.type} onChange={(event) => setValue("type", event.target.value)}>
-              <option value="income">Income</option>
-              <option value="expense">Expense</option>
-            </SelectField>
-          </FieldShell>
-          <FieldShell label="Title" className="sm:col-span-2">
-            <InputField value={transactionValues.title} onChange={(event) => setValue("title", event.target.value)} placeholder="Salary, Grocery, Client payment" />
-          </FieldShell>
-          <FieldShell label="Category">
-            <SelectField value={transactionValues.category} onChange={(event) => setValue("category", event.target.value)}>
-              {categories.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </SelectField>
-          </FieldShell>
-          <FieldShell label="Payment method">
-            <SelectField value={transactionValues.paymentMethod} onChange={(event) => setValue("paymentMethod", event.target.value)}>
-              {paymentMethods.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </SelectField>
-          </FieldShell>
-          <FieldShell label="Amount">
-            <InputField type="number" value={transactionValues.amount} onChange={(event) => setValue("amount", event.target.value)} />
-          </FieldShell>
-          <FieldShell label="Notes" className="sm:col-span-2">
-            <TextareaField rows={4} value={transactionValues.notes} onChange={(event) => setValue("notes", event.target.value)} />
-          </FieldShell>
-        </div>
-      ) : null}
+      <div className="mt-5 space-y-4">
+        {activeTab === "Transaction" ? (
+          <>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FieldShell label="Date"><InputField type="date" value={transactionValues.date} onChange={(event) => setValue("date", event.target.value)} /></FieldShell>
+              <FieldShell label="Type">
+                <ChoiceChips
+                  value={transactionValues.type as "income" | "expense"}
+                  onChange={(value) => setValue("type", value)}
+                  options={[
+                    { value: "income", label: "Income", helper: "Money coming in" },
+                    { value: "expense", label: "Expense", helper: "Money going out" }
+                  ]}
+                />
+              </FieldShell>
+              <FieldShell label="Title" className="sm:col-span-2"><InputField value={transactionValues.title} onChange={(event) => setValue("title", event.target.value)} /></FieldShell>
+              <FieldShell label="Category"><ComboField options={categories} value={transactionValues.category} placeholder="Select or type a category" onChange={(event) => setValue("category", event.target.value)} /></FieldShell>
+              <FieldShell label="Payment method"><ComboField options={paymentMethods} value={transactionValues.paymentMethod} placeholder="Select or type a payment method" onChange={(event) => setValue("paymentMethod", event.target.value)} /></FieldShell>
+              <FieldShell label="Amount"><InputField type="number" min="0" value={transactionValues.amount} onChange={(event) => setValue("amount", event.target.value)} /></FieldShell>
+              <FieldShell label="Notes" className="sm:col-span-2"><TextareaField rows={3} value={transactionValues.notes} onChange={(event) => setValue("notes", event.target.value)} /></FieldShell>
+            </div>
+            <div className="rounded-[24px] border border-dashed border-white/10 bg-white/[0.02] p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="font-medium">Attach transaction proof</p>
+                  <p className="mt-1 text-sm text-muted">Add a food bill photo, fuel receipt, screenshot, or PDF for future reference.</p>
+                </div>
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white transition hover:border-primary/30">
+                  <Upload className="h-4 w-4" />
+                  Choose file
+                  <input type="file" accept="image/*,application/pdf" className="hidden" onChange={(event) => { handleProofFileChange(event.target.files?.[0] ?? null); event.currentTarget.value = ""; }} />
+                </label>
+              </div>
+              {transactionProofFile ? (
+                <div className="mt-3 flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0 flex items-start gap-3">
+                    <div className="mt-0.5 rounded-xl bg-primary/10 p-2 text-primary"><Paperclip className="h-4 w-4" /></div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-white">{transactionProofFile.name}</p>
+                      <p className="mt-1 text-xs text-muted">{formatFileSize(transactionProofFile.size)} • {transactionProofFile.type || "Proof file"}</p>
+                    </div>
+                  </div>
+                  <Button type="button" variant="ghost" className="justify-center gap-2 self-start text-muted hover:text-white" onClick={clearTransactionProof}>
+                    <X className="h-4 w-4" />Remove
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          </>
+        ) : null}
 
-      {activeTab === "Lend/Borrow" ? (
-        <div className="mt-5 grid gap-4 sm:grid-cols-2">
-          <FieldShell label="Date">
-            <InputField type="date" value={lendBorrowValues.date} onChange={(event) => setValue("date", event.target.value)} />
-          </FieldShell>
-          <FieldShell label="Type">
-            <SelectField value={lendBorrowValues.kind} onChange={(event) => setValue("kind", event.target.value)}>
-              <option value="given">Money you gave</option>
-              <option value="borrowed">Money you borrowed</option>
-            </SelectField>
-          </FieldShell>
-          <FieldShell label="Person / company">
-            <InputField value={lendBorrowValues.person} onChange={(event) => setValue("person", event.target.value)} />
-          </FieldShell>
-          <FieldShell label="Amount">
-            <InputField type="number" value={lendBorrowValues.amount} onChange={(event) => setValue("amount", event.target.value)} />
-          </FieldShell>
-          <FieldShell label="Amount settled">
-            <InputField type="number" value={lendBorrowValues.settled} onChange={(event) => setValue("settled", event.target.value)} />
-          </FieldShell>
-          <FieldShell label="Due date">
-            <InputField type="date" value={lendBorrowValues.dueDate} onChange={(event) => setValue("dueDate", event.target.value)} />
-          </FieldShell>
-          <FieldShell label="Notes" className="sm:col-span-2">
-            <TextareaField rows={4} value={lendBorrowValues.notes} onChange={(event) => setValue("notes", event.target.value)} />
-          </FieldShell>
-        </div>
-      ) : null}
+        {activeTab === "Lend/Borrow" ? (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FieldShell label="Date"><InputField type="date" value={lendBorrowValues.date} onChange={(event) => setValue("date", event.target.value)} /></FieldShell>
+            <FieldShell label="Type">
+              <ChoiceChips
+                value={lendBorrowValues.kind as "given" | "borrowed"}
+                onChange={(value) => setValue("kind", value)}
+                options={[
+                  { value: "given", label: "Given", helper: "Money to receive" },
+                  { value: "borrowed", label: "Borrowed", helper: "Money to repay" }
+                ]}
+              />
+            </FieldShell>
+            <FieldShell label="Person / place"><InputField value={lendBorrowValues.person} onChange={(event) => setValue("person", event.target.value)} /></FieldShell>
+            <FieldShell label="Amount"><InputField type="number" min="0" value={lendBorrowValues.amount} onChange={(event) => setValue("amount", event.target.value)} /></FieldShell>
+            <FieldShell label="Settled amount"><InputField type="number" min="0" value={lendBorrowValues.settled} onChange={(event) => setValue("settled", event.target.value)} /></FieldShell>
+            <FieldShell label="Due date"><InputField type="date" value={lendBorrowValues.dueDate} onChange={(event) => setValue("dueDate", event.target.value)} /></FieldShell>
+            <FieldShell label="Notes" className="sm:col-span-2"><TextareaField rows={3} value={lendBorrowValues.notes} onChange={(event) => setValue("notes", event.target.value)} /></FieldShell>
+          </div>
+        ) : null}
 
-      {activeTab === "Investment" ? (
-        <div className="mt-5 grid gap-4 sm:grid-cols-2">
-          <FieldShell label="Date">
-            <InputField type="date" value={investmentValues.date} onChange={(event) => setValue("date", event.target.value)} />
-          </FieldShell>
-          <FieldShell label="Investment type">
-            <SelectField value={investmentValues.investmentType} onChange={(event) => setValue("investmentType", event.target.value)}>
-              {investmentTypes.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </SelectField>
-          </FieldShell>
-          <FieldShell label="Platform / broker">
-            <SelectField value={investmentValues.platform} onChange={(event) => setValue("platform", event.target.value)}>
-              {investmentPlatforms.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </SelectField>
-          </FieldShell>
-          <FieldShell label="Invested amount">
-            <InputField type="number" value={investmentValues.investedAmount} onChange={(event) => setValue("investedAmount", event.target.value)} />
-          </FieldShell>
-          <FieldShell label="Current value">
-            <InputField type="number" value={investmentValues.currentValue} onChange={(event) => setValue("currentValue", event.target.value)} />
-          </FieldShell>
-          <FieldShell label="Withdrawn amount">
-            <InputField type="number" value={investmentValues.withdrawnAmount} onChange={(event) => setValue("withdrawnAmount", event.target.value)} />
-          </FieldShell>
-          <FieldShell label="Notes" className="sm:col-span-2">
-            <TextareaField rows={4} value={investmentValues.notes} onChange={(event) => setValue("notes", event.target.value)} />
-          </FieldShell>
-        </div>
-      ) : null}
+        {activeTab === "Investment" ? (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FieldShell label="Date"><InputField type="date" value={investmentValues.date} onChange={(event) => setValue("date", event.target.value)} /></FieldShell>
+            <FieldShell label="Investment type"><ComboField options={investmentTypes} value={investmentValues.investmentType} onChange={(event) => setValue("investmentType", event.target.value)} /></FieldShell>
+            <FieldShell label="Platform"><ComboField options={investmentPlatforms} value={investmentValues.platform} onChange={(event) => setValue("platform", event.target.value)} /></FieldShell>
+            <FieldShell label="Invested amount"><InputField type="number" min="0" value={investmentValues.investedAmount} onChange={(event) => setValue("investedAmount", event.target.value)} /></FieldShell>
+            <FieldShell label="Current value"><InputField type="number" min="0" value={investmentValues.currentValue} onChange={(event) => setValue("currentValue", event.target.value)} /></FieldShell>
+            <FieldShell label="Withdrawn amount"><InputField type="number" min="0" value={investmentValues.withdrawnAmount} onChange={(event) => setValue("withdrawnAmount", event.target.value)} /></FieldShell>
+            <FieldShell label="Notes" className="sm:col-span-2"><TextareaField rows={3} value={investmentValues.notes} onChange={(event) => setValue("notes", event.target.value)} /></FieldShell>
+          </div>
+        ) : null}
 
-      {activeTab === "Asset" ? (
-        <div className="mt-5 grid gap-4 sm:grid-cols-2">
-          <FieldShell label="Date">
-            <InputField type="date" value={assetValues.date} onChange={(event) => setValue("date", event.target.value)} />
-          </FieldShell>
-          <FieldShell label="Asset name">
-            <InputField value={assetValues.assetName} onChange={(event) => setValue("assetName", event.target.value)} />
-          </FieldShell>
-          <FieldShell label="Asset category">
-            <SelectField value={assetValues.assetCategory} onChange={(event) => setValue("assetCategory", event.target.value)}>
-              {assetCategories.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </SelectField>
-          </FieldShell>
-          <FieldShell label="Purchase cost">
-            <InputField type="number" value={assetValues.purchaseCost} onChange={(event) => setValue("purchaseCost", event.target.value)} />
-          </FieldShell>
-          <FieldShell label="Current value">
-            <InputField type="number" value={assetValues.currentValue} onChange={(event) => setValue("currentValue", event.target.value)} />
-          </FieldShell>
-          <FieldShell label="Notes" className="sm:col-span-2">
-            <TextareaField rows={4} value={assetValues.notes} onChange={(event) => setValue("notes", event.target.value)} />
-          </FieldShell>
-        </div>
-      ) : null}
+        {activeTab === "Asset" ? (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FieldShell label="Date"><InputField type="date" value={assetValues.date} onChange={(event) => setValue("date", event.target.value)} /></FieldShell>
+            <FieldShell label="Asset name"><InputField value={assetValues.assetName} onChange={(event) => setValue("assetName", event.target.value)} /></FieldShell>
+            <FieldShell label="Asset category"><ComboField options={assetCategories} value={assetValues.assetCategory} onChange={(event) => setValue("assetCategory", event.target.value)} /></FieldShell>
+            <FieldShell label="Purchase cost"><InputField type="number" min="0" value={assetValues.purchaseCost} onChange={(event) => setValue("purchaseCost", event.target.value)} /></FieldShell>
+            <FieldShell label="Current value"><InputField type="number" min="0" value={assetValues.currentValue} onChange={(event) => setValue("currentValue", event.target.value)} /></FieldShell>
+            <FieldShell label="Notes" className="sm:col-span-2"><TextareaField rows={3} value={assetValues.notes} onChange={(event) => setValue("notes", event.target.value)} /></FieldShell>
+          </div>
+        ) : null}
+      </div>
 
-      <div className="mt-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <p className="text-sm text-muted">
-          Need filters, edits, or deeper summaries? Open the full page for this section.
-        </p>
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <Link href={links[activeTab]}>
-            <Button variant="secondary">Open full {activeTab} page</Button>
-          </Link>
-          <Button onClick={handleSubmit}>Save {activeTab}</Button>
+      <div className="mt-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <Link href={links[activeTab]} className="text-sm text-primary">Open full {activeTab.toLowerCase()} page</Link>
+        <div className="flex flex-col gap-3 sm:items-end">
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <Button variant="secondary" onClick={resetCurrentTab}>Reset</Button>
+            <Button onClick={() => void handleSubmit()}>Save now</Button>
+          </div>
+          {success ? <div className="rounded-2xl border border-success/30 bg-success/10 px-4 py-3 text-sm text-success sm:max-w-[320px]">{success}</div> : null}
+          {error ? <div className="rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger sm:max-w-[320px]">{error}</div> : null}
         </div>
       </div>
     </Card>

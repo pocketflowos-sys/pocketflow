@@ -15,7 +15,7 @@ export function Badge({ tone = "gold", className, ...props }: BadgeProps) {
         tone === "green" &&
           "border-success/25 bg-success/10 text-success",
         tone === "red" && "border-danger/25 bg-danger/10 text-danger",
-        tone === "neutral" && "border-white/10 bg-white/5 text-muted",
+        tone === "neutral" && "border-white/10 bg-white/5 text-foreground/75",
         className
       )}
       {...props}

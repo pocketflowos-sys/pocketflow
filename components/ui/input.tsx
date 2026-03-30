@@ -15,7 +15,7 @@ export function Input({ label, icon, rightElement, className, ...props }: InputP
         {icon ? <span className="shrink-0 text-muted">{icon}</span> : null}
         <input
           className={cn(
-            "w-full min-w-0 bg-transparent text-white outline-none placeholder:text-muted/80",
+            "w-full min-w-0 bg-transparent text-foreground outline-none placeholder:text-muted/80",
             className
           )}
           {...props}

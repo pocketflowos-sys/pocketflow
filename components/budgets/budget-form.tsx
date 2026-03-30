@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { FieldShell, InputField, SelectField } from "@/components/ui/form-controls";
+import { ComboField, FieldShell, InputField } from "@/components/ui/form-controls";
 import { getMonthKey, getTodayIso } from "@/lib/formatters";
 import type { Budget } from "@/lib/types";
 
@@ -47,44 +47,20 @@ export function BudgetForm({
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2">
         <FieldShell label="Month">
-          <InputField
-            type="month"
-            value={form.month}
-            onChange={(event) => setForm((prev) => ({ ...prev, month: event.target.value }))}
-          />
+          <InputField type="month" value={form.month} onChange={(event) => setForm((prev) => ({ ...prev, month: event.target.value }))} />
         </FieldShell>
         <FieldShell label="Budget amount">
-          <InputField
-            type="number"
-            min="0"
-            value={form.amount || ""}
-            onChange={(event) => setForm((prev) => ({ ...prev, amount: Number(event.target.value) }))}
-          />
+          <InputField type="number" min="0" value={form.amount || ""} onChange={(event) => setForm((prev) => ({ ...prev, amount: Number(event.target.value) }))} />
         </FieldShell>
         <FieldShell label="Category" className="sm:col-span-2">
-          <SelectField
-            value={form.category}
-            onChange={(event) => setForm((prev) => ({ ...prev, category: event.target.value }))}
-          >
-            {categoryOptions.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </SelectField>
+          <ComboField options={categoryOptions} value={form.category} placeholder="Food, Travel, Salary" onChange={(event) => setForm((prev) => ({ ...prev, category: event.target.value }))} />
         </FieldShell>
       </div>
 
-      {error ? (
-        <div className="rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
-          {error}
-        </div>
-      ) : null}
+      {error ? <div className="rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">{error}</div> : null}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
-        <Button variant="secondary" onClick={onCancel}>
-          Cancel
-        </Button>
+        <Button variant="secondary" onClick={onCancel}>Cancel</Button>
         <Button onClick={handleSubmit}>{submitLabel}</Button>
       </div>
     </div>

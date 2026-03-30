@@ -6,9 +6,11 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode
 } from "react";
+import { usePathname } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { emptyPocketFlowState, emptyUserSettings } from "@/lib/defaults";
 import { getMonthKey, getTodayIso } from "@/lib/formatters";
@@ -16,16 +18,68 @@ import { createBrowserSupabaseClient, isSupabaseConfigured } from "@/lib/supabas
 import type {
   Asset,
   Budget,
+  CreditCard,
+  DashboardSnapshot,
   Investment,
+  Loan,
   LendBorrowEntry,
   PocketFlowContextValue,
   PocketFlowState,
   Profile,
+  ThemeMode,
   Transaction,
+  TransactionMutationInput,
   UserSettings
 } from "@/lib/types";
+import { getCreditCardOutstanding, getLoanOutstanding } from "@/lib/finance";
+import { removeTransactionProof, uploadTransactionProof } from "@/lib/transaction-proofs";
 
 const PocketFlowContext = createContext<PocketFlowContextValue | null>(null);
+
+const publicBootstrapPrefixes = [
+  "/",
+  "/login",
+  "/signup",
+  "/forgot-password",
+  "/privacy-policy",
+  "/refund-policy",
+  "/terms",
+  "/support",
+  "/success",
+  "/update-password"
+] as const;
+
+function shouldBootstrapForPath(pathname: string | null) {
+  if (!pathname) return false;
+  return !publicBootstrapPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(prefix + "/"));
+}
+
+type BootstrapScope =
+  | "dashboard"
+  | "transactions"
+  | "lend-borrow"
+  | "credit-cards"
+  | "loans"
+  | "investments"
+  | "assets"
+  | "categories"
+  | "settings"
+  | "budgets"
+  | "full";
+
+function getBootstrapScope(pathname: string | null): BootstrapScope {
+  if (pathname === "/dashboard") return "dashboard";
+  if (pathname === "/transactions") return "transactions";
+  if (pathname === "/lend-borrow") return "lend-borrow";
+  if (pathname === "/credit-cards") return "credit-cards";
+  if (pathname === "/loans") return "loans";
+  if (pathname === "/investments") return "investments";
+  if (pathname === "/assets") return "assets";
+  if (pathname === "/categories") return "categories";
+  if (pathname === "/settings") return "settings";
+  if (pathname === "/budgets") return "budgets";
+  return "full";
+}
 
 type DbTransactionRow = {
   id: string;
@@ -36,6 +90,9 @@ type DbTransactionRow = {
   amount: number;
   payment_method: string;
   notes: string | null;
+  proof_storage_path: string | null;
+  proof_file_name: string | null;
+  proof_mime_type: string | null;
 };
 
 type DbLendBorrowRow = {
@@ -70,6 +127,32 @@ type DbAssetRow = {
   notes: string | null;
 };
 
+type DbCreditCardRow = {
+  id: string;
+  card_name: string;
+  issuer: string;
+  billing_date: string;
+  due_date: string;
+  credit_limit: number;
+  current_balance: number;
+  amount_paid: number;
+  notes: string | null;
+};
+
+type DbLoanRow = {
+  id: string;
+  loan_name: string;
+  lender: string;
+  start_date: string;
+  due_date: string | null;
+  principal_amount: number;
+  outstanding_amount: number;
+  emi_amount: number;
+  next_emi_date: string | null;
+  interest_rate: number;
+  notes: string | null;
+};
+
 type DbBudgetRow = {
   id: string;
   month_start: string;
@@ -87,6 +170,7 @@ type DbUserSettingsRow = {
   investment_platforms: string[] | null;
   asset_categories: string[] | null;
   support_email: string | null;
+  theme: ThemeMode | null;
 };
 
 type DbProfileRow = {
@@ -107,6 +191,44 @@ function normalizeNumber(value: unknown) {
   return 0;
 }
 
+function pickFirstMeaningfulString(...values: Array<string | null | undefined>) {
+  for (const value of values) {
+    if (typeof value !== "string") continue;
+    const trimmed = value.trim();
+    if (trimmed) return trimmed;
+  }
+  return "";
+}
+
+function normalizeMutationError(message: string) {
+  const lower = message.toLowerCase();
+  if (lower.includes("transaction-proofs") || lower.includes("proof_storage_path") || lower.includes("proof_file_name") || lower.includes("proof_mime_type")) {
+    return "Transaction save needs the latest proof-upload database changes. Run the transaction proof migration, or save without proof after updating the codebase.";
+  }
+  if (lower.includes("row-level security") || lower.includes("permission denied")) {
+    return "PocketFlow could not save because the database permissions rejected this action.";
+  }
+  return message;
+}
+
+function buildTransactionPayload(input: TransactionMutationInput, proof: { storagePath?: string | null; fileName?: string | null; mimeType?: string | null } = {}) {
+  const payload: Record<string, unknown> = {
+    transaction_date: input.date,
+    type: input.type,
+    title: input.title,
+    category: input.category,
+    amount: input.amount,
+    payment_method: input.paymentMethod,
+    notes: input.notes ?? null
+  };
+
+  if (proof.storagePath !== undefined) payload.proof_storage_path = proof.storagePath;
+  if (proof.fileName !== undefined) payload.proof_file_name = proof.fileName;
+  if (proof.mimeType !== undefined) payload.proof_mime_type = proof.mimeType;
+
+  return payload;
+}
+
 function mapTransaction(row: DbTransactionRow): Transaction {
   return {
     id: row.id,
@@ -116,7 +238,10 @@ function mapTransaction(row: DbTransactionRow): Transaction {
     category: row.category,
     amount: normalizeNumber(row.amount),
     paymentMethod: row.payment_method,
-    notes: row.notes ?? ""
+    notes: row.notes ?? "",
+    proofStoragePath: row.proof_storage_path ?? undefined,
+    proofFileName: row.proof_file_name ?? undefined,
+    proofMimeType: row.proof_mime_type ?? undefined
   };
 }
 
@@ -158,6 +283,36 @@ function mapAsset(row: DbAssetRow): Asset {
   };
 }
 
+function mapCreditCard(row: DbCreditCardRow): CreditCard {
+  return {
+    id: row.id,
+    cardName: row.card_name,
+    issuer: row.issuer,
+    billingDate: row.billing_date,
+    dueDate: row.due_date,
+    creditLimit: normalizeNumber(row.credit_limit),
+    currentBalance: normalizeNumber(row.current_balance),
+    amountPaid: normalizeNumber(row.amount_paid),
+    notes: row.notes ?? ""
+  };
+}
+
+function mapLoan(row: DbLoanRow): Loan {
+  return {
+    id: row.id,
+    loanName: row.loan_name,
+    lender: row.lender,
+    startDate: row.start_date,
+    dueDate: row.due_date ?? undefined,
+    principalAmount: normalizeNumber(row.principal_amount),
+    outstandingAmount: normalizeNumber(row.outstanding_amount),
+    emiAmount: normalizeNumber(row.emi_amount),
+    nextEmiDate: row.next_emi_date ?? undefined,
+    interestRate: normalizeNumber(row.interest_rate),
+    notes: row.notes ?? ""
+  };
+}
+
 function mapBudget(row: DbBudgetRow): Budget {
   return {
     id: row.id,
@@ -167,11 +322,18 @@ function mapBudget(row: DbBudgetRow): Budget {
   };
 }
 
+function applyTheme(theme: ThemeMode) {
+  if (typeof document === "undefined") return;
+  document.documentElement.dataset.theme = theme;
+  document.documentElement.classList.remove("light", "dark");
+  document.documentElement.classList.add(theme);
+}
+
 function mapSettings(row: DbUserSettingsRow | null, profile: Profile | null, fallbackEmail = ""): UserSettings {
   return {
-    profileName: row?.profile_name ?? profile?.fullName ?? "",
-    email: row?.email ?? profile?.email ?? fallbackEmail,
-    currency: row?.currency ?? profile?.preferredCurrency ?? "INR",
+    profileName: pickFirstMeaningfulString(row?.profile_name, profile?.fullName),
+    email: pickFirstMeaningfulString(row?.email, profile?.email, fallbackEmail),
+    currency: pickFirstMeaningfulString(row?.currency, profile?.preferredCurrency, "INR"),
     categories: row?.categories?.length ? row.categories : emptyUserSettings.categories,
     paymentMethods: row?.payment_methods?.length ? row.payment_methods : emptyUserSettings.paymentMethods,
     investmentTypes: row?.investment_types?.length ? row.investment_types : emptyUserSettings.investmentTypes,
@@ -179,7 +341,8 @@ function mapSettings(row: DbUserSettingsRow | null, profile: Profile | null, fal
       ? row.investment_platforms
       : emptyUserSettings.investmentPlatforms,
     assetCategories: row?.asset_categories?.length ? row.asset_categories : emptyUserSettings.assetCategories,
-    supportEmail: row?.support_email ?? emptyUserSettings.supportEmail
+    supportEmail: pickFirstMeaningfulString(row?.support_email, emptyUserSettings.supportEmail),
+    theme: row?.theme ?? emptyUserSettings.theme
   };
 }
 
@@ -187,9 +350,9 @@ function mapProfile(row: DbProfileRow | null, user: User | null): Profile | null
   if (!user) return null;
   return {
     id: user.id,
-    fullName: row?.full_name ?? (user.user_metadata.full_name as string | undefined) ?? "",
-    email: row?.email ?? user.email ?? "",
-    preferredCurrency: row?.preferred_currency ?? "INR",
+    fullName: pickFirstMeaningfulString(row?.full_name, user.user_metadata.full_name as string | undefined),
+    email: pickFirstMeaningfulString(row?.email, user.email),
+    preferredCurrency: pickFirstMeaningfulString(row?.preferred_currency, "INR"),
     accessStatus: row?.access_status ?? "pending",
     paidAt: row?.paid_at ?? null
   };
@@ -208,7 +371,8 @@ async function ensureSettingsRow(user: User) {
       investment_types: emptyUserSettings.investmentTypes,
       investment_platforms: emptyUserSettings.investmentPlatforms,
       asset_categories: emptyUserSettings.assetCategories,
-      support_email: emptyUserSettings.supportEmail
+      support_email: emptyUserSettings.supportEmail,
+      theme: emptyUserSettings.theme
     },
     { onConflict: "user_id", ignoreDuplicates: true }
   );
@@ -221,45 +385,322 @@ export function PocketFlowProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [operationError, setOperationError] = useState("");
-
+  const [dashboardSnapshot, setDashboardSnapshot] = useState<DashboardSnapshot | null>(null);
+  const [loadedScope, setLoadedScope] = useState<"empty" | BootstrapScope>("empty");
   const configured = isSupabaseConfigured();
+  const pathname = usePathname();
+  const canBootstrapCurrentPath = shouldBootstrapForPath(pathname);
+  const realtimeRef = useRef<{ unsubscribe: () => void } | null>(null);
+  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inFlightRefreshRef = useRef(false);
+  const refreshPromiseRef = useRef<Promise<void> | null>(null);
+  const lastRefreshAtRef = useRef(0);
+  const lastAutoRefreshAtRef = useRef(0);
+  const ensuredSettingsUserIdRef = useRef<string | null>(null);
+  const userRef = useRef<User | null>(null);
+  const loadedScopeRef = useRef<"empty" | BootstrapScope>("empty");
+  const bootstrapGuardRef = useRef<{ key: string; at: number }>({ key: "", at: 0 });
+  const bootstrapRequestRef = useRef<{ id: number; scope: BootstrapScope | "full" | "empty" }>({ id: 0, scope: "empty" });
+  const bootstrapAbortRef = useRef<AbortController | null>(null);
+  const autoRefreshCooldownMs = 30_000;
+  const visibilityRefreshCooldownMs = 60_000;
+  const realtimeEnabled = process.env.NEXT_PUBLIC_ENABLE_REALTIME === "true";
+
+  const beginBootstrapRequest = useCallback((scope: BootstrapScope | "full") => {
+    bootstrapAbortRef.current?.abort();
+    const controller = new AbortController();
+    const nextId = bootstrapRequestRef.current.id + 1;
+    bootstrapRequestRef.current = { id: nextId, scope };
+    bootstrapAbortRef.current = controller;
+    return { id: nextId, controller };
+  }, []);
+
+  const isStaleBootstrapRequest = useCallback((id: number, scope: BootstrapScope | "full") => {
+    return bootstrapRequestRef.current.id !== id || bootstrapRequestRef.current.scope !== scope;
+  }, []);
 
   const clearOperationError = useCallback(() => setOperationError(""), []);
 
+  const shouldSkipBootstrap = useCallback((currentUser: User | null, scope: BootstrapScope, force = false) => {
+    if (force) return false;
+    const key = `${currentUser?.id ?? "anon"}:${scope}:${pathname}`;
+    const now = Date.now();
+    if (bootstrapGuardRef.current.key === key && now - bootstrapGuardRef.current.at < 1500) {
+      return true;
+    }
+    bootstrapGuardRef.current = { key, at: now };
+    return false;
+  }, [pathname]);
+
   const resetLocalState = useCallback(() => {
+    ensuredSettingsUserIdRef.current = null;
+    userRef.current = null;
+    bootstrapAbortRef.current?.abort();
+    bootstrapAbortRef.current = null;
+    bootstrapRequestRef.current = { id: bootstrapRequestRef.current.id + 1, scope: "empty" };
+    bootstrapGuardRef.current = { key: "", at: 0 };
     setState(emptyPocketFlowState);
     setProfile(null);
+    setDashboardSnapshot(null);
+    loadedScopeRef.current = "empty";
+    setLoadedScope("empty");
     setOperationError("");
   }, []);
 
-  const refresh = useCallback(async () => {
+
+  const fetchDashboardBootstrap = useCallback(async (currentUser: User | null) => {
+    const request = beginBootstrapRequest("dashboard");
     if (!configured) {
       setLoading(false);
-      setOperationError("Supabase env variables are missing. Add them in Vercel and .env.local.");
+      setOperationError("Database environment variables are missing. Add them in Vercel and .env.local.");
       return;
     }
 
-    const supabase = createBrowserSupabaseClient();
     setSyncing(true);
     setOperationError("");
 
     try {
-      const {
-        data: { user: currentUser },
-        error: userError
-      } = await supabase.auth.getUser();
-
-      if (userError) throw userError;
-      setUser(currentUser);
-
       if (!currentUser) {
         resetLocalState();
         return;
       }
 
-      await ensureSettingsRow(currentUser);
+      const response = await fetch("/api/dashboard-bootstrap", {
+        method: "GET",
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+        signal: request.controller.signal
+      });
 
-      const [profileRes, settingsRes, transactionsRes, lendBorrowRes, investmentsRes, assetsRes, budgetsRes] = await Promise.all([
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { error?: string } | null;
+        throw new Error(payload?.error || "Failed to load your dashboard workspace.");
+      }
+
+      const payload = await response.json() as {
+        profile: DbProfileRow | null;
+        settings: DbUserSettingsRow | null;
+        dashboard: DashboardSnapshot;
+      };
+
+      if (request.controller.signal.aborted || isStaleBootstrapRequest(request.id, "dashboard") || getBootstrapScope(pathname) !== "dashboard") {
+        return;
+      }
+
+      const nextProfile = mapProfile(payload.profile, currentUser);
+      const nextSettings = mapSettings(payload.settings, nextProfile, currentUser.email ?? "");
+      applyTheme(nextSettings.theme);
+      setProfile(nextProfile);
+      setState((prev) => ({ ...prev, userSettings: nextSettings }));
+      setDashboardSnapshot(payload.dashboard);
+      loadedScopeRef.current = "dashboard";
+      setLoadedScope("dashboard");
+    } catch (error) {
+      if (request.controller.signal.aborted) return;
+      setOperationError(error instanceof Error ? error.message : "Failed to sync your PocketFlow dashboard.");
+    } finally {
+      if (isStaleBootstrapRequest(request.id, "dashboard")) return;
+      setSyncing(false);
+      setLoading(false);
+    }
+  }, [beginBootstrapRequest, configured, isStaleBootstrapRequest, pathname, resetLocalState]);
+
+  const fetchTransactionsBootstrap = useCallback(async (currentUser: User | null) => {
+    const request = beginBootstrapRequest("transactions");
+    if (!configured) {
+      setLoading(false);
+      setOperationError("Database environment variables are missing. Add them in Vercel and .env.local.");
+      return;
+    }
+
+    setSyncing(true);
+    setOperationError("");
+
+    try {
+      if (!currentUser) {
+        resetLocalState();
+        return;
+      }
+
+      const response = await fetch("/api/transactions-bootstrap", {
+        method: "GET",
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+        signal: request.controller.signal
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { error?: string } | null;
+        throw new Error(payload?.error || "Failed to load your transactions workspace.");
+      }
+
+      const payload = await response.json() as {
+        profile: DbProfileRow | null;
+        settings: DbUserSettingsRow | null;
+        transactions: DbTransactionRow[];
+      };
+
+      if (request.controller.signal.aborted || isStaleBootstrapRequest(request.id, "transactions") || getBootstrapScope(pathname) !== "transactions") {
+        return;
+      }
+
+      const nextProfile = mapProfile(payload.profile, currentUser);
+      const nextSettings = mapSettings(payload.settings, nextProfile, currentUser.email ?? "");
+      applyTheme(nextSettings.theme);
+      setProfile(nextProfile);
+      setDashboardSnapshot(null);
+      loadedScopeRef.current = "transactions";
+      setLoadedScope("transactions");
+      setState((prev) => ({
+        ...prev,
+        transactions: (payload.transactions ?? []).map((row) => mapTransaction(row)),
+        userSettings: nextSettings
+      }));
+    } catch (error) {
+      if (request.controller.signal.aborted) return;
+      setOperationError(error instanceof Error ? error.message : "Failed to sync your PocketFlow transactions.");
+    } finally {
+      if (isStaleBootstrapRequest(request.id, "transactions")) return;
+      setSyncing(false);
+      setLoading(false);
+    }
+  }, [beginBootstrapRequest, configured, isStaleBootstrapRequest, pathname, resetLocalState]);
+
+  const fetchScopedPageBootstrap = useCallback(async (
+    scope: Exclude<BootstrapScope, "dashboard" | "transactions" | "full">,
+    currentUser: User | null
+  ) => {
+    const request = beginBootstrapRequest(scope);
+    if (!configured) {
+      setLoading(false);
+      setOperationError("Database environment variables are missing. Add them in Vercel and .env.local.");
+      return;
+    }
+
+    setSyncing(true);
+    setOperationError("");
+
+    try {
+      if (!currentUser) {
+        resetLocalState();
+        return;
+      }
+
+      const response = await fetch(`/api/page-bootstrap?scope=${scope}`, {
+        method: "GET",
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+        signal: request.controller.signal
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { error?: string } | null;
+        throw new Error(payload?.error || `Failed to load your ${scope} workspace.`);
+      }
+
+      const payload = await response.json() as {
+        profile: DbProfileRow | null;
+        settings: DbUserSettingsRow | null;
+        lendBorrowEntries?: DbLendBorrowRow[];
+        investments?: DbInvestmentRow[];
+        assets?: DbAssetRow[];
+        creditCards?: DbCreditCardRow[];
+        loans?: DbLoanRow[];
+        transactions?: DbTransactionRow[];
+        budgets?: DbBudgetRow[];
+      };
+
+      if (request.controller.signal.aborted || isStaleBootstrapRequest(request.id, scope) || getBootstrapScope(pathname) !== scope) {
+        return;
+      }
+
+      const nextProfile = mapProfile(payload.profile, currentUser);
+      const nextSettings = mapSettings(payload.settings, nextProfile, currentUser.email ?? "");
+      applyTheme(nextSettings.theme);
+      setProfile(nextProfile);
+      setDashboardSnapshot(null);
+      loadedScopeRef.current = scope;
+      setLoadedScope(scope);
+      setState((prev) => ({
+        ...prev,
+        userSettings: nextSettings,
+        ...(scope === "lend-borrow"
+          ? { lendBorrowEntries: (payload.lendBorrowEntries ?? []).map((row) => mapLendBorrow(row)) }
+          : {}),
+        ...(scope === "credit-cards"
+          ? { creditCards: (payload.creditCards ?? []).map((row) => mapCreditCard(row)) }
+          : {}),
+        ...(scope === "loans"
+          ? { loans: (payload.loans ?? []).map((row) => mapLoan(row)) }
+          : {}),
+        ...(scope === "investments"
+          ? { investments: (payload.investments ?? []).map((row) => mapInvestment(row)) }
+          : {}),
+        ...(scope === "assets"
+          ? { assets: (payload.assets ?? []).map((row) => mapAsset(row)) }
+          : {}),
+        ...(scope === "categories"
+          ? {
+              transactions: (payload.transactions ?? []).map((row) => mapTransaction(row)),
+              investments: (payload.investments ?? []).map((row) => mapInvestment(row)),
+              assets: (payload.assets ?? []).map((row) => mapAsset(row)),
+              loans: (payload.loans ?? []).map((row) => mapLoan(row))
+            }
+          : {}),
+        ...(scope === "budgets"
+          ? {
+              transactions: (payload.transactions ?? []).map((row) => mapTransaction(row)),
+              budgets: (payload.budgets ?? []).map((row) => mapBudget(row))
+            }
+          : {}),
+        ...(scope === "settings" ? {} : {})
+      }));
+    } catch (error) {
+      if (request.controller.signal.aborted) return;
+      setOperationError(error instanceof Error ? error.message : `Failed to sync your PocketFlow ${scope}.`);
+    } finally {
+      if (isStaleBootstrapRequest(request.id, scope)) return;
+      setSyncing(false);
+      setLoading(false);
+    }
+  }, [beginBootstrapRequest, configured, isStaleBootstrapRequest, pathname, resetLocalState]);
+
+  const fetchWorkspace = useCallback(async (currentUser: User | null) => {
+    const request = beginBootstrapRequest("full");
+    if (!configured) {
+      setLoading(false);
+      setOperationError("Database environment variables are missing. Add them in Vercel and .env.local.");
+      return;
+    }
+
+    setSyncing(true);
+    setOperationError("");
+
+    try {
+      if (!currentUser) {
+        resetLocalState();
+        return;
+      }
+
+      const supabase = createBrowserSupabaseClient();
+      if (ensuredSettingsUserIdRef.current !== currentUser.id) {
+        ensuredSettingsUserIdRef.current = currentUser.id;
+        void ensureSettingsRow(currentUser).catch(() => {
+          ensuredSettingsUserIdRef.current = null;
+        });
+      }
+
+      const [
+        profileRes,
+        settingsRes,
+        transactionsRes,
+        lendBorrowRes,
+        investmentsRes,
+        assetsRes,
+        creditCardsRes,
+        loansRes,
+        budgetsRes
+      ] = await Promise.all([
         supabase
           .from("profiles")
           .select("id, full_name, email, preferred_currency, access_status, paid_at")
@@ -268,153 +709,450 @@ export function PocketFlowProvider({ children }: { children: ReactNode }) {
         supabase
           .from("user_settings")
           .select(
-            "profile_name, email, currency, categories, payment_methods, investment_types, investment_platforms, asset_categories, support_email"
+            "profile_name, email, currency, categories, payment_methods, investment_types, investment_platforms, asset_categories, support_email, theme"
           )
           .eq("user_id", currentUser.id)
           .maybeSingle(),
         supabase
           .from("transactions")
-          .select("id, transaction_date, type, title, category, amount, payment_method, notes")
+          .select("id, transaction_date, type, title, category, amount, payment_method, notes, proof_storage_path, proof_file_name, proof_mime_type")
+          .eq("user_id", currentUser.id)
           .order("transaction_date", { ascending: false }),
         supabase
           .from("lend_borrow_entries")
           .select("id, entry_date, person_name, type, amount, amount_settled, due_date, notes")
+          .eq("user_id", currentUser.id)
           .order("entry_date", { ascending: false }),
         supabase
           .from("investments")
           .select("id, investment_date, investment_type, platform, invested_amount, current_value, withdrawn_amount, notes")
+          .eq("user_id", currentUser.id)
           .order("investment_date", { ascending: false }),
         supabase
           .from("assets")
           .select("id, purchase_date, asset_name, asset_category, purchase_cost, current_value, notes")
+          .eq("user_id", currentUser.id)
           .order("purchase_date", { ascending: false }),
+        supabase
+          .from("credit_cards")
+          .select("id, card_name, issuer, billing_date, due_date, credit_limit, current_balance, amount_paid, notes")
+          .eq("user_id", currentUser.id)
+          .order("due_date", { ascending: true }),
+        supabase
+          .from("loans")
+          .select("id, loan_name, lender, start_date, due_date, principal_amount, outstanding_amount, emi_amount, next_emi_date, interest_rate, notes")
+          .eq("user_id", currentUser.id)
+          .order("next_emi_date", { ascending: true }),
         supabase
           .from("budgets")
           .select("id, month_start, category, budget_amount")
+          .eq("user_id", currentUser.id)
           .order("month_start", { ascending: false })
       ]);
 
-      const firstError = [profileRes.error, settingsRes.error, transactionsRes.error, lendBorrowRes.error, investmentsRes.error, assetsRes.error, budgetsRes.error].find(Boolean);
+      const firstError = [
+        profileRes.error,
+        settingsRes.error,
+        transactionsRes.error,
+        lendBorrowRes.error,
+        investmentsRes.error,
+        assetsRes.error,
+        creditCardsRes.error,
+        loansRes.error,
+        budgetsRes.error
+      ].find(Boolean);
       if (firstError) throw firstError;
 
+      if (request.controller.signal.aborted || isStaleBootstrapRequest(request.id, "full") || getBootstrapScope(pathname) !== "full") {
+        return;
+      }
+
       const nextProfile = mapProfile((profileRes.data ?? null) as DbProfileRow | null, currentUser);
+      const nextSettings = mapSettings((settingsRes.data ?? null) as DbUserSettingsRow | null, nextProfile, currentUser.email ?? "");
+      applyTheme(nextSettings.theme);
       setProfile(nextProfile);
+      setDashboardSnapshot(null);
+      loadedScopeRef.current = "full";
+      setLoadedScope("full");
       setState({
         transactions: (transactionsRes.data ?? []).map((row) => mapTransaction(row as DbTransactionRow)),
         lendBorrowEntries: (lendBorrowRes.data ?? []).map((row) => mapLendBorrow(row as DbLendBorrowRow)),
         investments: (investmentsRes.data ?? []).map((row) => mapInvestment(row as DbInvestmentRow)),
         assets: (assetsRes.data ?? []).map((row) => mapAsset(row as DbAssetRow)),
+        creditCards: (creditCardsRes.data ?? []).map((row) => mapCreditCard(row as DbCreditCardRow)),
+        loans: (loansRes.data ?? []).map((row) => mapLoan(row as DbLoanRow)),
         budgets: (budgetsRes.data ?? []).map((row) => mapBudget(row as DbBudgetRow)),
-        userSettings: mapSettings((settingsRes.data ?? null) as DbUserSettingsRow | null, nextProfile, currentUser.email ?? "")
+        userSettings: nextSettings
       });
     } catch (error) {
+      if (request.controller.signal.aborted) return;
       setOperationError(error instanceof Error ? error.message : "Failed to sync your PocketFlow data.");
     } finally {
+      if (isStaleBootstrapRequest(request.id, "full")) return;
       setSyncing(false);
       setLoading(false);
     }
-  }, [configured, resetLocalState]);
+  }, [beginBootstrapRequest, configured, isStaleBootstrapRequest, pathname, resetLocalState]);
+
+  const refresh = useCallback(async () => {
+    if (!configured) {
+      setLoading(false);
+      setOperationError("Database environment variables are missing. Add them in Vercel and .env.local.");
+      return;
+    }
+
+    if (inFlightRefreshRef.current) {
+      await refreshPromiseRef.current;
+      return;
+    }
+
+    const task = (async () => {
+      inFlightRefreshRef.current = true;
+
+      try {
+        let currentUser = userRef.current ?? user;
+        if (!currentUser) {
+          const supabase = createBrowserSupabaseClient();
+          const {
+            data: { user: fetchedUser },
+            error: userError
+          } = await supabase.auth.getUser();
+          if (userError) {
+            setOperationError(userError.message);
+            setLoading(false);
+            return;
+          }
+          currentUser = fetchedUser;
+        }
+
+        lastRefreshAtRef.current = Date.now();
+        const scope = getBootstrapScope(pathname);
+        if (scope === "dashboard" && loadedScopeRef.current !== "full") await fetchDashboardBootstrap(currentUser ?? null);
+        else if (scope === "transactions" && loadedScopeRef.current !== "full") await fetchTransactionsBootstrap(currentUser ?? null);
+        else if (scope !== "full" && loadedScopeRef.current !== "full") await fetchScopedPageBootstrap(scope as Exclude<BootstrapScope, "dashboard" | "transactions" | "full">, currentUser ?? null);
+        else await fetchWorkspace(currentUser ?? null);
+      } finally {
+        inFlightRefreshRef.current = false;
+        refreshPromiseRef.current = null;
+      }
+    })();
+
+    refreshPromiseRef.current = task;
+    await task;
+  }, [configured, fetchDashboardBootstrap, fetchTransactionsBootstrap, fetchWorkspace, pathname, user]);
+
+  const scheduleRefresh = useCallback((delay = 220) => {
+    if (typeof window === "undefined" || document.visibilityState === "hidden") return;
+
+    const now = Date.now();
+    if (inFlightRefreshRef.current) return;
+    if (now - lastAutoRefreshAtRef.current < autoRefreshCooldownMs) return;
+
+    if (refreshTimeoutRef.current) {
+      clearTimeout(refreshTimeoutRef.current);
+    }
+
+    refreshTimeoutRef.current = setTimeout(() => {
+      refreshTimeoutRef.current = null;
+      if (document.visibilityState === "hidden") return;
+      if (Date.now() - lastAutoRefreshAtRef.current < autoRefreshCooldownMs) return;
+      lastAutoRefreshAtRef.current = Date.now();
+      void refresh();
+    }, delay);
+  }, [autoRefreshCooldownMs, refresh]);
 
   useEffect(() => {
     let active = true;
     if (!configured) {
       setLoading(false);
-      setOperationError("Supabase env variables are missing. Add them in Vercel and .env.local.");
+      setOperationError("Database environment variables are missing. Add them in Vercel and .env.local.");
       return;
     }
 
     const supabase = createBrowserSupabaseClient();
 
-    supabase.auth.getUser().then(({ data }) => {
+    supabase.auth.getSession().then(async ({ data, error }) => {
       if (!active) return;
-      setUser(data.user ?? null);
-    });
+      if (error) {
+        setOperationError(error.message);
+        setLoading(false);
+        return;
+      }
 
-    refresh();
+      const nextUser = data.session?.user ?? null;
+      userRef.current = nextUser;
+      setUser(nextUser);
+      if (!canBootstrapCurrentPath) {
+        setLoading(false);
+        return;
+      }
+      const nextScope = getBootstrapScope(pathname);
+      if (shouldSkipBootstrap(nextUser, nextScope)) {
+        setLoading(false);
+        return;
+      }
+      if (nextScope === "dashboard") await fetchDashboardBootstrap(nextUser);
+      else if (nextScope === "transactions") await fetchTransactionsBootstrap(nextUser);
+      else if (nextScope !== "full") await fetchScopedPageBootstrap(nextScope as Exclude<BootstrapScope, "dashboard" | "transactions" | "full">, nextUser);
+      else await fetchWorkspace(nextUser);
+    });
 
     const {
       data: { subscription }
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      refresh();
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!active) return;
+
+      const nextUser = session?.user ?? null;
+      const previousUserId = userRef.current?.id ?? null;
+      const nextUserId = nextUser?.id ?? null;
+
+      userRef.current = nextUser;
+      setUser(nextUser);
+
+      if (event === "INITIAL_SESSION") {
+        return;
+      }
+
+      if (event === "SIGNED_OUT") {
+        resetLocalState();
+        setLoading(false);
+        return;
+      }
+
+      if (!canBootstrapCurrentPath) {
+        setLoading(false);
+        return;
+      }
+
+      if (event === "SIGNED_IN" || event === "USER_UPDATED" || event === "TOKEN_REFRESHED" || previousUserId !== nextUserId) {
+        lastAutoRefreshAtRef.current = Date.now();
+        const nextScope = getBootstrapScope(pathname);
+        if (shouldSkipBootstrap(nextUser, nextScope, event === "TOKEN_REFRESHED")) {
+          setLoading(false);
+          return;
+        }
+        if (nextScope === "dashboard") void fetchDashboardBootstrap(nextUser);
+        else if (nextScope === "transactions") void fetchTransactionsBootstrap(nextUser);
+        else if (nextScope !== "full") void fetchScopedPageBootstrap(nextScope as Exclude<BootstrapScope, "dashboard" | "transactions" | "full">, nextUser);
+        else void fetchWorkspace(nextUser);
+      }
     });
 
     return () => {
       active = false;
       subscription.unsubscribe();
     };
-  }, [configured, refresh]);
+  }, [canBootstrapCurrentPath, configured, fetchDashboardBootstrap, fetchTransactionsBootstrap, fetchScopedPageBootstrap, fetchWorkspace, pathname, resetLocalState, shouldSkipBootstrap]);
 
-  const runMutation = useCallback(async <T,>(callback: () => Promise<T>) => {
-    setSyncing(true);
-    setOperationError("");
-    try {
-      await callback();
-      return true;
-    } catch (error) {
-      setOperationError(error instanceof Error ? error.message : "Something went wrong.");
-      return false;
-    } finally {
-      setSyncing(false);
+  useEffect(() => {
+    bootstrapGuardRef.current = { key: "", at: 0 };
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!configured) return;
+    if (!userRef.current) return;
+    const scope = getBootstrapScope(pathname);
+
+    if (shouldSkipBootstrap(userRef.current, scope)) {
+      return;
     }
+
+    if (scope === "dashboard" && loadedScopeRef.current !== "dashboard") {
+      void fetchDashboardBootstrap(userRef.current);
+      return;
+    }
+
+    if (scope === "transactions" && loadedScopeRef.current !== "transactions") {
+      void fetchTransactionsBootstrap(userRef.current);
+      return;
+    }
+
+    if (scope !== "full" && loadedScopeRef.current !== scope) {
+      void fetchScopedPageBootstrap(scope as Exclude<BootstrapScope, "dashboard" | "transactions" | "full">, userRef.current);
+      return;
+    }
+
+    if (scope === "full" && loadedScopeRef.current !== "full") {
+      void fetchWorkspace(userRef.current);
+    }
+  }, [
+    configured,
+    fetchDashboardBootstrap,
+    fetchTransactionsBootstrap,
+    fetchScopedPageBootstrap,
+    fetchWorkspace,
+    pathname,
+    shouldSkipBootstrap
+  ]);
+
+  useEffect(() => {
+    if (!configured || !user || !realtimeEnabled) return;
+    const supabase = createBrowserSupabaseClient();
+
+    realtimeRef.current?.unsubscribe();
+
+    const channel = supabase.channel(`pocketflow-sync-${user.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "transactions", filter: `user_id=eq.${user.id}` }, () => scheduleRefresh(260))
+      .on("postgres_changes", { event: "*", schema: "public", table: "lend_borrow_entries", filter: `user_id=eq.${user.id}` }, () => scheduleRefresh(260))
+      .on("postgres_changes", { event: "*", schema: "public", table: "investments", filter: `user_id=eq.${user.id}` }, () => scheduleRefresh(260))
+      .on("postgres_changes", { event: "*", schema: "public", table: "assets", filter: `user_id=eq.${user.id}` }, () => scheduleRefresh(260))
+      .on("postgres_changes", { event: "*", schema: "public", table: "credit_cards", filter: `user_id=eq.${user.id}` }, () => scheduleRefresh(260))
+      .on("postgres_changes", { event: "*", schema: "public", table: "loans", filter: `user_id=eq.${user.id}` }, () => scheduleRefresh(260))
+      .on("postgres_changes", { event: "*", schema: "public", table: "budgets", filter: `user_id=eq.${user.id}` }, () => scheduleRefresh(260))
+      .subscribe();
+
+    realtimeRef.current = {
+      unsubscribe: () => {
+        supabase.removeChannel(channel);
+      }
+    };
+
+    return () => {
+      supabase.removeChannel(channel);
+      realtimeRef.current = null;
+    };
+  }, [configured, realtimeEnabled, scheduleRefresh, user]);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      if (Date.now() - lastAutoRefreshAtRef.current < visibilityRefreshCooldownMs) return;
+      scheduleRefresh(180);
+    };
+
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible, { passive: true });
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, [scheduleRefresh, visibilityRefreshCooldownMs]);
+
+  useEffect(() => {
+    return () => {
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
+      }
+    };
   }, []);
+
+  useEffect(() => {
+    applyTheme(state.userSettings.theme);
+  }, [state.userSettings.theme]);
 
   const signOut = useCallback(async () => {
     if (!configured) return;
     const supabase = createBrowserSupabaseClient();
     await supabase.auth.signOut();
     resetLocalState();
+    ensuredSettingsUserIdRef.current = null;
+    userRef.current = null;
     setUser(null);
   }, [configured, resetLocalState]);
 
+  const runMutation = useCallback(async (callback: () => Promise<void>) => {
+    try {
+      setOperationError("");
+      await callback();
+      return true;
+    } catch (error) {
+      setOperationError(error instanceof Error ? normalizeMutationError(error.message) : "We could not save your changes.");
+      return false;
+    }
+  }, []);
+
   const value = useMemo<PocketFlowContextValue>(() => {
-    const addTransaction = async (input: Omit<Transaction, "id">) => {
+    const syncDashboardAfterMutation = async () => {
+      if (loadedScopeRef.current === "dashboard") {
+        await refresh();
+      }
+    };
+
+    const addTransaction = async (input: TransactionMutationInput) => {
       if (!user) return false;
       return runMutation(async () => {
         const supabase = createBrowserSupabaseClient();
+        let proofStoragePath: string | null | undefined = input.proofStoragePath;
+        let proofFileName: string | null | undefined = input.proofFileName;
+        let proofMimeType: string | null | undefined = input.proofMimeType;
+
+        if (input.proofFile) {
+          const uploaded = await uploadTransactionProof(supabase, user.id, input.proofFile);
+          proofStoragePath = uploaded.path;
+          proofFileName = uploaded.fileName;
+          proofMimeType = uploaded.mimeType;
+        }
+
+        const transactionPayload = buildTransactionPayload(input, {
+          storagePath: proofStoragePath,
+          fileName: proofFileName,
+          mimeType: proofMimeType
+        });
+
         const { data, error } = await supabase
           .from("transactions")
           .insert({
             user_id: user.id,
-            transaction_date: input.date,
-            type: input.type,
-            title: input.title,
-            category: input.category,
-            amount: input.amount,
-            payment_method: input.paymentMethod,
-            notes: input.notes ?? null
+            ...transactionPayload
           })
-          .select("id, transaction_date, type, title, category, amount, payment_method, notes")
+          .select("id, transaction_date, type, title, category, amount, payment_method, notes, proof_storage_path, proof_file_name, proof_mime_type")
           .single();
-        if (error) throw error;
+        if (error) {
+          if (proofStoragePath) {
+            await removeTransactionProof(supabase, proofStoragePath).catch(() => undefined);
+          }
+          throw error;
+        }
         setState((prev) => ({ ...prev, transactions: [mapTransaction(data as DbTransactionRow), ...prev.transactions] }));
+        await syncDashboardAfterMutation();
       });
     };
 
-    const updateTransaction = async (id: string, input: Omit<Transaction, "id">) => {
+    const updateTransaction = async (id: string, input: TransactionMutationInput) => {
       if (!user) return false;
       return runMutation(async () => {
         const supabase = createBrowserSupabaseClient();
+        const existing = state.transactions.find((item) => item.id === id);
+        let proofStoragePath: string | null | undefined = input.proofStoragePath ?? existing?.proofStoragePath;
+        let proofFileName: string | null | undefined = input.proofFileName ?? existing?.proofFileName;
+        let proofMimeType: string | null | undefined = input.proofMimeType ?? existing?.proofMimeType;
+
+        if (input.removeProof && existing?.proofStoragePath) {
+          await removeTransactionProof(supabase, existing.proofStoragePath).catch(() => undefined);
+          proofStoragePath = null;
+          proofFileName = null;
+          proofMimeType = null;
+        }
+
+        if (input.proofFile) {
+          const uploaded = await uploadTransactionProof(supabase, user.id, input.proofFile);
+          if (existing?.proofStoragePath && existing.proofStoragePath !== uploaded.path) {
+            await removeTransactionProof(supabase, existing.proofStoragePath).catch(() => undefined);
+          }
+          proofStoragePath = uploaded.path;
+          proofFileName = uploaded.fileName;
+          proofMimeType = uploaded.mimeType;
+        }
+
+        const transactionPayload = buildTransactionPayload(input, {
+          storagePath: proofStoragePath,
+          fileName: proofFileName,
+          mimeType: proofMimeType
+        });
+
         const { data, error } = await supabase
           .from("transactions")
-          .update({
-            transaction_date: input.date,
-            type: input.type,
-            title: input.title,
-            category: input.category,
-            amount: input.amount,
-            payment_method: input.paymentMethod,
-            notes: input.notes ?? null
-          })
+          .update(transactionPayload)
           .eq("id", id)
           .eq("user_id", user.id)
-          .select("id, transaction_date, type, title, category, amount, payment_method, notes")
+          .select("id, transaction_date, type, title, category, amount, payment_method, notes, proof_storage_path, proof_file_name, proof_mime_type")
           .single();
         if (error) throw error;
         setState((prev) => ({
           ...prev,
           transactions: prev.transactions.map((item) => (item.id === id ? mapTransaction(data as DbTransactionRow) : item))
         }));
+        await syncDashboardAfterMutation();
       });
     };
 
@@ -422,9 +1160,14 @@ export function PocketFlowProvider({ children }: { children: ReactNode }) {
       if (!user) return false;
       return runMutation(async () => {
         const supabase = createBrowserSupabaseClient();
+        const existing = state.transactions.find((item) => item.id === id);
         const { error } = await supabase.from("transactions").delete().eq("id", id).eq("user_id", user.id);
         if (error) throw error;
+        if (existing?.proofStoragePath) {
+          await removeTransactionProof(supabase, existing.proofStoragePath).catch(() => undefined);
+        }
         setState((prev) => ({ ...prev, transactions: prev.transactions.filter((item) => item.id !== id) }));
+        await syncDashboardAfterMutation();
       });
     };
 
@@ -447,10 +1190,8 @@ export function PocketFlowProvider({ children }: { children: ReactNode }) {
           .select("id, entry_date, person_name, type, amount, amount_settled, due_date, notes")
           .single();
         if (error) throw error;
-        setState((prev) => ({
-          ...prev,
-          lendBorrowEntries: [mapLendBorrow(data as DbLendBorrowRow), ...prev.lendBorrowEntries]
-        }));
+        setState((prev) => ({ ...prev, lendBorrowEntries: [mapLendBorrow(data as DbLendBorrowRow), ...prev.lendBorrowEntries] }));
+        await syncDashboardAfterMutation();
       });
     };
 
@@ -478,6 +1219,7 @@ export function PocketFlowProvider({ children }: { children: ReactNode }) {
           ...prev,
           lendBorrowEntries: prev.lendBorrowEntries.map((item) => (item.id === id ? mapLendBorrow(data as DbLendBorrowRow) : item))
         }));
+        await syncDashboardAfterMutation();
       });
     };
 
@@ -488,6 +1230,7 @@ export function PocketFlowProvider({ children }: { children: ReactNode }) {
         const { error } = await supabase.from("lend_borrow_entries").delete().eq("id", id).eq("user_id", user.id);
         if (error) throw error;
         setState((prev) => ({ ...prev, lendBorrowEntries: prev.lendBorrowEntries.filter((item) => item.id !== id) }));
+        await syncDashboardAfterMutation();
       });
     };
 
@@ -511,6 +1254,7 @@ export function PocketFlowProvider({ children }: { children: ReactNode }) {
           .single();
         if (error) throw error;
         setState((prev) => ({ ...prev, investments: [mapInvestment(data as DbInvestmentRow), ...prev.investments] }));
+        await syncDashboardAfterMutation();
       });
     };
 
@@ -538,6 +1282,7 @@ export function PocketFlowProvider({ children }: { children: ReactNode }) {
           ...prev,
           investments: prev.investments.map((item) => (item.id === id ? mapInvestment(data as DbInvestmentRow) : item))
         }));
+        await syncDashboardAfterMutation();
       });
     };
 
@@ -548,6 +1293,7 @@ export function PocketFlowProvider({ children }: { children: ReactNode }) {
         const { error } = await supabase.from("investments").delete().eq("id", id).eq("user_id", user.id);
         if (error) throw error;
         setState((prev) => ({ ...prev, investments: prev.investments.filter((item) => item.id !== id) }));
+        await syncDashboardAfterMutation();
       });
     };
 
@@ -570,6 +1316,7 @@ export function PocketFlowProvider({ children }: { children: ReactNode }) {
           .single();
         if (error) throw error;
         setState((prev) => ({ ...prev, assets: [mapAsset(data as DbAssetRow), ...prev.assets] }));
+        await syncDashboardAfterMutation();
       });
     };
 
@@ -593,6 +1340,7 @@ export function PocketFlowProvider({ children }: { children: ReactNode }) {
           .single();
         if (error) throw error;
         setState((prev) => ({ ...prev, assets: prev.assets.map((item) => (item.id === id ? mapAsset(data as DbAssetRow) : item)) }));
+        await syncDashboardAfterMutation();
       });
     };
 
@@ -603,6 +1351,137 @@ export function PocketFlowProvider({ children }: { children: ReactNode }) {
         const { error } = await supabase.from("assets").delete().eq("id", id).eq("user_id", user.id);
         if (error) throw error;
         setState((prev) => ({ ...prev, assets: prev.assets.filter((item) => item.id !== id) }));
+        await syncDashboardAfterMutation();
+      });
+    };
+
+    const addCreditCard = async (input: Omit<CreditCard, "id">) => {
+      if (!user) return false;
+      return runMutation(async () => {
+        const supabase = createBrowserSupabaseClient();
+        const { data, error } = await supabase
+          .from("credit_cards")
+          .insert({
+            user_id: user.id,
+            card_name: input.cardName,
+            issuer: input.issuer,
+            billing_date: input.billingDate,
+            due_date: input.dueDate,
+            credit_limit: input.creditLimit,
+            current_balance: input.currentBalance,
+            amount_paid: input.amountPaid,
+            notes: input.notes ?? null
+          })
+          .select("id, card_name, issuer, billing_date, due_date, credit_limit, current_balance, amount_paid, notes")
+          .single();
+        if (error) throw error;
+        setState((prev) => ({ ...prev, creditCards: [mapCreditCard(data as DbCreditCardRow), ...prev.creditCards] }));
+        await syncDashboardAfterMutation();
+      });
+    };
+
+    const updateCreditCard = async (id: string, input: Omit<CreditCard, "id">) => {
+      if (!user) return false;
+      return runMutation(async () => {
+        const supabase = createBrowserSupabaseClient();
+        const { data, error } = await supabase
+          .from("credit_cards")
+          .update({
+            card_name: input.cardName,
+            issuer: input.issuer,
+            billing_date: input.billingDate,
+            due_date: input.dueDate,
+            credit_limit: input.creditLimit,
+            current_balance: input.currentBalance,
+            amount_paid: input.amountPaid,
+            notes: input.notes ?? null
+          })
+          .eq("id", id)
+          .eq("user_id", user.id)
+          .select("id, card_name, issuer, billing_date, due_date, credit_limit, current_balance, amount_paid, notes")
+          .single();
+        if (error) throw error;
+        setState((prev) => ({
+          ...prev,
+          creditCards: prev.creditCards.map((item) => (item.id === id ? mapCreditCard(data as DbCreditCardRow) : item))
+        }));
+      });
+    };
+
+    const deleteCreditCard = async (id: string) => {
+      if (!user) return false;
+      return runMutation(async () => {
+        const supabase = createBrowserSupabaseClient();
+        const { error } = await supabase.from("credit_cards").delete().eq("id", id).eq("user_id", user.id);
+        if (error) throw error;
+        setState((prev) => ({ ...prev, creditCards: prev.creditCards.filter((item) => item.id !== id) }));
+        await syncDashboardAfterMutation();
+      });
+    };
+
+    const addLoan = async (input: Omit<Loan, "id">) => {
+      if (!user) return false;
+      return runMutation(async () => {
+        const supabase = createBrowserSupabaseClient();
+        const { data, error } = await supabase
+          .from("loans")
+          .insert({
+            user_id: user.id,
+            loan_name: input.loanName,
+            lender: input.lender,
+            start_date: input.startDate,
+            due_date: input.dueDate ?? null,
+            principal_amount: input.principalAmount,
+            outstanding_amount: input.outstandingAmount,
+            emi_amount: input.emiAmount,
+            next_emi_date: input.nextEmiDate ?? null,
+            interest_rate: input.interestRate,
+            notes: input.notes ?? null
+          })
+          .select("id, loan_name, lender, start_date, due_date, principal_amount, outstanding_amount, emi_amount, next_emi_date, interest_rate, notes")
+          .single();
+        if (error) throw error;
+        setState((prev) => ({ ...prev, loans: [mapLoan(data as DbLoanRow), ...prev.loans] }));
+        await syncDashboardAfterMutation();
+      });
+    };
+
+    const updateLoan = async (id: string, input: Omit<Loan, "id">) => {
+      if (!user) return false;
+      return runMutation(async () => {
+        const supabase = createBrowserSupabaseClient();
+        const { data, error } = await supabase
+          .from("loans")
+          .update({
+            loan_name: input.loanName,
+            lender: input.lender,
+            start_date: input.startDate,
+            due_date: input.dueDate ?? null,
+            principal_amount: input.principalAmount,
+            outstanding_amount: input.outstandingAmount,
+            emi_amount: input.emiAmount,
+            next_emi_date: input.nextEmiDate ?? null,
+            interest_rate: input.interestRate,
+            notes: input.notes ?? null
+          })
+          .eq("id", id)
+          .eq("user_id", user.id)
+          .select("id, loan_name, lender, start_date, due_date, principal_amount, outstanding_amount, emi_amount, next_emi_date, interest_rate, notes")
+          .single();
+        if (error) throw error;
+        setState((prev) => ({ ...prev, loans: prev.loans.map((item) => (item.id === id ? mapLoan(data as DbLoanRow) : item)) }));
+        await syncDashboardAfterMutation();
+      });
+    };
+
+    const deleteLoan = async (id: string) => {
+      if (!user) return false;
+      return runMutation(async () => {
+        const supabase = createBrowserSupabaseClient();
+        const { error } = await supabase.from("loans").delete().eq("id", id).eq("user_id", user.id);
+        if (error) throw error;
+        setState((prev) => ({ ...prev, loans: prev.loans.filter((item) => item.id !== id) }));
+        await syncDashboardAfterMutation();
       });
     };
 
@@ -622,6 +1501,7 @@ export function PocketFlowProvider({ children }: { children: ReactNode }) {
           .single();
         if (error) throw error;
         setState((prev) => ({ ...prev, budgets: [mapBudget(data as DbBudgetRow), ...prev.budgets] }));
+        await syncDashboardAfterMutation();
       });
     };
 
@@ -642,6 +1522,7 @@ export function PocketFlowProvider({ children }: { children: ReactNode }) {
           .single();
         if (error) throw error;
         setState((prev) => ({ ...prev, budgets: prev.budgets.map((item) => (item.id === id ? mapBudget(data as DbBudgetRow) : item)) }));
+        await syncDashboardAfterMutation();
       });
     };
 
@@ -652,6 +1533,7 @@ export function PocketFlowProvider({ children }: { children: ReactNode }) {
         const { error } = await supabase.from("budgets").delete().eq("id", id).eq("user_id", user.id);
         if (error) throw error;
         setState((prev) => ({ ...prev, budgets: prev.budgets.filter((item) => item.id !== id) }));
+        await syncDashboardAfterMutation();
       });
     };
 
@@ -668,7 +1550,8 @@ export function PocketFlowProvider({ children }: { children: ReactNode }) {
           paymentMethods: input.paymentMethods ?? state.userSettings.paymentMethods,
           investmentTypes: input.investmentTypes ?? state.userSettings.investmentTypes,
           investmentPlatforms: input.investmentPlatforms ?? state.userSettings.investmentPlatforms,
-          assetCategories: input.assetCategories ?? state.userSettings.assetCategories
+          assetCategories: input.assetCategories ?? state.userSettings.assetCategories,
+          theme: input.theme ?? state.userSettings.theme
         };
 
         let persistedEmail = nextSettings.email;
@@ -689,7 +1572,8 @@ export function PocketFlowProvider({ children }: { children: ReactNode }) {
             investment_types: nextSettings.investmentTypes,
             investment_platforms: nextSettings.investmentPlatforms,
             asset_categories: nextSettings.assetCategories,
-            support_email: nextSettings.supportEmail
+            support_email: nextSettings.supportEmail,
+            theme: nextSettings.theme
           },
           { onConflict: "user_id" }
         );
@@ -704,7 +1588,7 @@ export function PocketFlowProvider({ children }: { children: ReactNode }) {
         if (profileError) throw profileError;
 
         const syncedSettings = { ...nextSettings, email: persistedEmail };
-
+        applyTheme(syncedSettings.theme);
         setState((prev) => ({ ...prev, userSettings: syncedSettings }));
         setProfile((prev) =>
           prev
@@ -721,7 +1605,11 @@ export function PocketFlowProvider({ children }: { children: ReactNode }) {
 
     return {
       state,
+      dashboardSnapshot,
+      loadedScope,
       profile,
+      authEmail: user?.email ?? "",
+      authName: pickFirstMeaningfulString((user?.user_metadata.full_name as string | undefined) ?? ""),
       loading,
       syncing,
       operationError,
@@ -741,13 +1629,19 @@ export function PocketFlowProvider({ children }: { children: ReactNode }) {
       addAsset,
       updateAsset,
       deleteAsset,
+      addCreditCard,
+      updateCreditCard,
+      deleteCreditCard,
+      addLoan,
+      updateLoan,
+      deleteLoan,
       addBudget,
       updateBudget,
       deleteBudget,
       updateUserSettings,
       signOut
     };
-  }, [clearOperationError, loading, operationError, profile, refresh, runMutation, signOut, state, syncing, user]);
+  }, [clearOperationError, dashboardSnapshot, loadedScope, loading, operationError, profile, refresh, runMutation, signOut, state, syncing, user]);
 
   return <PocketFlowContext.Provider value={value}>{children}</PocketFlowContext.Provider>;
 }
@@ -799,12 +1693,14 @@ export function usePocketFlowOptions() {
 }
 
 export function useDashboardData() {
-  const { state } = usePocketFlow();
+  const { state, dashboardSnapshot, loadedScope } = usePocketFlow();
   const todayIso = getTodayIso();
   const today = new Date(todayIso);
   const monthKey = getMonthKey(todayIso);
 
   return useMemo(() => {
+    if (loadedScope === "dashboard" && dashboardSnapshot) return dashboardSnapshot;
+
     const totalIncome = state.transactions
       .filter((item) => item.type === "income")
       .reduce((sum, item) => sum + item.amount, 0);
@@ -822,7 +1718,7 @@ export function useDashboardData() {
       .reduce((sum, item) => sum + Math.max(item.amount - item.amountSettled, 0), 0);
 
     const totalInvestments = state.investments.reduce((sum, item) => sum + item.currentValue, 0);
-    const trackedBalance = totalIncome - totalExpenses + receivables - payables;
+    const currentBalance = totalIncome - totalExpenses;
     const savingsRate = totalIncome > 0 ? ((totalIncome - totalExpenses) / totalIncome) * 100 : 0;
 
     const currentMonthBudgets = state.budgets.filter((budget) => budget.month === monthKey);
@@ -833,6 +1729,10 @@ export function useDashboardData() {
     const budgetUsed = totalBudget > 0 ? (currentMonthExpenses / totalBudget) * 100 : 0;
 
     const assetsValue = state.assets.reduce((sum, item) => sum + item.currentValue, 0);
+    const creditOutstanding = state.creditCards.reduce((sum, item) => sum + getCreditCardOutstanding(item.currentBalance, item.amountPaid), 0);
+    const creditLimitTotal = state.creditCards.reduce((sum, item) => sum + item.creditLimit, 0);
+    const totalLoanOutstanding = state.loans.reduce((sum, item) => sum + getLoanOutstanding(item.outstandingAmount), 0);
+    const totalEmiAmount = state.loans.reduce((sum, item) => sum + item.emiAmount, 0);
 
     const expenseByCategoryMap = state.transactions
       .filter((item) => item.type === "expense" && getMonthKey(item.date) === monthKey)
@@ -842,8 +1742,8 @@ export function useDashboardData() {
       }, {});
 
     const expenseByCategory = Object.entries(expenseByCategoryMap)
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value);
+      .map(([name, value]) => ({ name, value: Number(value) }))
+      .sort((a, b) => Number(b.value) - Number(a.value));
 
     const monthBuckets = new Map<string, { income: number; expense: number }>();
     state.transactions.forEach((item) => {
@@ -894,24 +1794,50 @@ export function useDashboardData() {
       .sort((a, b) => a.dueSortValue - b.dueSortValue)
       .slice(0, 4);
 
-    const overdueCount = upcomingDueItems.filter((item) => item.status === "Overdue").length;
+    const creditCardItems = state.creditCards
+      .map((item) => ({
+        ...item,
+        outstanding: getCreditCardOutstanding(item.currentBalance, item.amountPaid),
+        dueSortValue: new Date(item.dueDate).getTime(),
+        overdue: new Date(item.dueDate) < today && getCreditCardOutstanding(item.currentBalance, item.amountPaid) > 0
+      }))
+      .filter((item) => item.outstanding > 0)
+      .sort((a, b) => a.dueSortValue - b.dueSortValue)
+      .slice(0, 4);
+
+    const loanItems = state.loans
+      .map((item) => ({
+        ...item,
+        dueSortValue: new Date(item.nextEmiDate ?? item.dueDate ?? item.startDate).getTime(),
+        overdue: Boolean(item.nextEmiDate && new Date(item.nextEmiDate) < today && item.emiAmount > 0)
+      }))
+      .sort((a, b) => a.dueSortValue - b.dueSortValue)
+      .slice(0, 4);
+
+    const overdueCount = upcomingDueItems.filter((item) => item.status === "Overdue").length + creditCardItems.filter((item) => item.overdue).length + loanItems.filter((item) => item.overdue).length;
 
     return {
       totalIncome,
       totalExpenses,
-      trackedBalance,
+      currentBalance,
       savingsRate,
       budgetUsed,
       receivables,
       payables,
       totalInvestments,
       assetsValue,
+      creditOutstanding,
+      creditLimitTotal,
+      totalLoanOutstanding,
+      totalEmiAmount,
       expenseByCategory,
       incomeVsExpense,
       investmentGrowth,
       recentTransactions,
       upcomingDueItems,
+      creditCardItems,
+      loanItems,
       overdueCount
     };
-  }, [monthKey, state, today]);
+  }, [dashboardSnapshot, loadedScope, monthKey, state, today]);
 }

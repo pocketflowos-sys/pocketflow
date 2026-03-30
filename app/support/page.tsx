@@ -10,13 +10,11 @@ export default function SupportPage() {
         <Card className="p-6 md:p-8">
           <p className="text-sm uppercase tracking-[0.2em] text-primary">PocketFlow support</p>
           <h1 className="mt-3 text-4xl font-semibold">Need help?</h1>
-          <p className="mt-4 text-sm text-muted">
-            For payment issues, account access problems, or product questions, contact PocketFlow support.
-          </p>
-          <p className="mt-5 text-lg font-medium text-white">{supportEmail}</p>
+          <p className="mt-4 text-sm text-muted">For payment issues, account access problems, or product questions, contact PocketFlow support.</p>
+          <a href={`mailto:${supportEmail}`} className="mt-5 inline-flex text-lg font-medium text-white underline underline-offset-4">{supportEmail}</a>
         </Card>
 
-        <Card className="space-y-4 p-6 md:p-8 text-sm text-muted">
+        <Card className="space-y-4 p-6 text-sm text-muted md:p-8">
           <p>Include your account email, device, issue details, and screenshots if possible.</p>
           <p>For payment issues, include the payment time and the email used during checkout.</p>
           <p><Link href="/" className="text-primary">Back to home</Link></p>

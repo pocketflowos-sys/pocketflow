@@ -47,9 +47,9 @@ function exportVisiblePageAsPdf() {
   window.setTimeout(() => popup.print(), 250);
 }
 
-export function PdfExportButton({ label = "PDF" }: { label?: string }) {
+export function PdfExportButton({ label = "PDF", className = "" }: { label?: string; className?: string }) {
   return (
-    <Button variant="secondary" className="gap-2" onClick={exportVisiblePageAsPdf}>
+    <Button variant="secondary" className={`gap-2 ${className}`.trim()} onClick={exportVisiblePageAsPdf}>
       <FileText className="h-4 w-4" />
       {label}
     </Button>

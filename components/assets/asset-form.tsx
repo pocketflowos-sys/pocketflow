@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { FieldShell, InputField, SelectField, TextareaField } from "@/components/ui/form-controls";
+import { ComboField, FieldShell, InputField, TextareaField } from "@/components/ui/form-controls";
 import { getTodayIso } from "@/lib/formatters";
 import type { Asset } from "@/lib/types";
 
@@ -59,13 +59,7 @@ export function AssetForm({
           <InputField value={form.assetName} onChange={(event) => setForm((prev) => ({ ...prev, assetName: event.target.value }))} />
         </FieldShell>
         <FieldShell label="Asset category">
-          <SelectField value={form.assetCategory} onChange={(event) => setForm((prev) => ({ ...prev, assetCategory: event.target.value }))}>
-            {categoryOptions.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </SelectField>
+          <ComboField options={categoryOptions} value={form.assetCategory} placeholder="Electronics, Vehicle, Property" onChange={(event) => setForm((prev) => ({ ...prev, assetCategory: event.target.value }))} />
         </FieldShell>
         <FieldShell label="Purchase cost">
           <InputField type="number" min="0" value={form.purchaseCost || ""} onChange={(event) => setForm((prev) => ({ ...prev, purchaseCost: Number(event.target.value) }))} />

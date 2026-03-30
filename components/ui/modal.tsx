@@ -20,7 +20,7 @@ export function Modal({
 
   return (
     <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/70 p-3 backdrop-blur sm:items-center sm:p-6">
-      <div className="surface max-h-[90vh] w-full max-w-2xl overflow-auto rounded-[30px] p-5 shadow-glow sm:p-6">
+      <div className="surface max-h-[90vh] w-full max-w-2xl overflow-auto rounded-[30px] p-5 text-foreground shadow-glow sm:p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h3 className="text-xl font-semibold">{title}</h3>
@@ -28,7 +28,7 @@ export function Modal({
           </div>
           <button
             onClick={onClose}
-            className="rounded-2xl border border-white/10 bg-white/5 p-2 text-muted transition hover:text-white"
+            className="rounded-2xl border border-white/10 bg-white/5 p-2 text-muted transition hover:text-foreground"
             aria-label="Close"
           >
             <X className="h-5 w-5" />

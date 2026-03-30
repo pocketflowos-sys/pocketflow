@@ -66,6 +66,24 @@ export function getAssetChangePercent(currentValue: number, purchaseCost: number
   return ((currentValue - purchaseCost) / purchaseCost) * 100;
 }
 
+export function getCreditCardOutstanding(currentBalance: number, amountPaid: number) {
+  return Math.max(currentBalance - amountPaid, 0);
+}
+
+export function getCreditUtilization(currentBalance: number, creditLimit: number) {
+  if (creditLimit <= 0) return 0;
+  return (currentBalance / creditLimit) * 100;
+}
+
+export function getLoanOutstanding(outstandingAmount: number) {
+  return Math.max(outstandingAmount, 0);
+}
+
+export function getLoanProgress(principalAmount: number, outstandingAmount: number) {
+  if (principalAmount <= 0) return 0;
+  return ((principalAmount - outstandingAmount) / principalAmount) * 100;
+}
+
 export function downloadCsv(filename: string, headers: string[], rows: (string | number)[][]) {
   const escape = (value: string | number) => `"${String(value ?? "").replaceAll('"', '""')}"`;
   const csv = [headers.map(escape).join(","), ...rows.map((row) => row.map(escape).join(","))].join("\n");

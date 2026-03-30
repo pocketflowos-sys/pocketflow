@@ -165,6 +165,34 @@ export const defaultPocketFlowState: PocketFlowState = {
       notes: "Event shooting equipment"
     }
   ],
+  creditCards: [
+    {
+      id: "cc_1",
+      cardName: "Primary Card",
+      issuer: "HDFC Bank",
+      billingDate: "2026-03-05",
+      dueDate: "2026-04-01",
+      creditLimit: 150000,
+      currentBalance: 32450,
+      amountPaid: 5000,
+      notes: "Main spending card"
+    }
+  ],
+  loans: [
+    {
+      id: "loan_1",
+      loanName: "Business Loan",
+      lender: "Bank",
+      startDate: "2025-06-01",
+      dueDate: "2028-05-31",
+      principalAmount: 600000,
+      outstandingAmount: 418000,
+      emiAmount: 18500,
+      nextEmiDate: "2026-04-05",
+      interestRate: 12.5,
+      notes: "Working capital support"
+    }
+  ],
   budgets: [
     { id: "bud_1", month: "2026-03", category: "Food", amount: 12000 },
     { id: "bud_2", month: "2026-03", category: "Housing", amount: 20000 },
@@ -192,6 +220,7 @@ export const defaultPocketFlowState: PocketFlowState = {
     investmentTypes: ["Mutual Fund", "Stocks", "Gold", "FD", "Crypto"],
     investmentPlatforms: ["Groww", "Zerodha", "Bank", "CoinSwitch"],
     assetCategories: ["Electronics", "Vehicle", "Equipment", "Property", "Gold"],
-    supportEmail: "support@pocketflow.app"
+    supportEmail: "support@pocketflow.app",
+    theme: "dark"
   }
 };

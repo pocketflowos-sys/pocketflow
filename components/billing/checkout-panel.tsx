@@ -26,7 +26,6 @@ async function loadCashfreeScript() {
       existing.addEventListener("error", () => resolve(false));
       return;
     }
-
     const script = document.createElement("script");
     script.src = "https://sdk.cashfree.com/js/v3/cashfree.js";
     script.async = true;
@@ -44,9 +43,7 @@ function getCashfreeMode(): "sandbox" | "production" {
   return window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" ? "sandbox" : "production";
 }
 
-async function wait(ms: number) {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
+async function wait(ms: number) { return new Promise((resolve) => window.setTimeout(resolve, ms)); }
 
 export function CheckoutPanel() {
   const router = useRouter();
@@ -63,35 +60,25 @@ export function CheckoutPanel() {
     setLoading(false);
     setVerifying(false);
     setRedirecting(true);
-    const timeout = window.setTimeout(() => {
-      router.replace("/dashboard");
-    }, 1400);
+    const timeout = window.setTimeout(() => { router.replace("/dashboard"); }, 1400);
     return () => window.clearTimeout(timeout);
   }, [profile?.accessStatus, router]);
 
   useEffect(() => {
     const orderId = searchParams.get("order_id");
     if (!orderId || profile?.accessStatus === "active") return;
-
     void verifyOrder(orderId, { retries: 2, silentPending: true });
   }, [profile?.accessStatus, searchParams]);
 
   async function verifyOrder(orderId: string, options?: { retries?: number; silentPending?: boolean }) {
     setVerifying(true);
     setStatusMessage("Checking your latest payment status...");
-
     const retries = options?.retries ?? 5;
     let lastMessage = "We could not confirm the payment yet.";
 
     for (let attempt = 0; attempt < retries; attempt += 1) {
-      const verifyResponse = await fetch("/api/cashfree/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ order_id: orderId })
-      });
-
+      const verifyResponse = await fetch("/api/cashfree/verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ order_id: orderId }) });
       const verifyData = await verifyResponse.json().catch(() => ({}));
-
       if (verifyResponse.ok && verifyData.verified) {
         await refresh();
         setVerifying(false);
@@ -101,13 +88,9 @@ export function CheckoutPanel() {
         router.replace("/dashboard");
         return true;
       }
-
       lastMessage = verifyData.message ?? lastMessage;
       const status = String(verifyData.status ?? "").toUpperCase();
-      if (status && status !== "ACTIVE") {
-        break;
-      }
-
+      if (status && status !== "ACTIVE") break;
       if (attempt < retries - 1) {
         setStatusMessage(`Payment received. Confirming with Cashfree${attempt > 0 ? ` (${attempt + 1}/${retries})` : ""}...`);
         await wait(1800);
@@ -117,9 +100,7 @@ export function CheckoutPanel() {
     setVerifying(false);
     setLoading(false);
     setStatusMessage("");
-    if (!options?.silentPending) {
-      setError(lastMessage);
-    }
+    if (!options?.silentPending) setError(lastMessage);
     return false;
   }
 
@@ -148,10 +129,7 @@ export function CheckoutPanel() {
 
     try {
       setStatusMessage("Opening Cashfree secure checkout...");
-      await cashfree.checkout({
-        paymentSessionId: orderData.payment_session_id,
-        redirectTarget: "_modal"
-      });
+      await cashfree.checkout({ paymentSessionId: orderData.payment_session_id, redirectTarget: "_modal" });
     } catch (checkoutError) {
       const message = checkoutError instanceof Error ? checkoutError.message : "The checkout window was closed before payment completed.";
       setError(message);
@@ -160,66 +138,37 @@ export function CheckoutPanel() {
     await verifyOrder(orderData.order_id, { retries: 6 });
   }
 
-  if (verifying) {
-    return <LoaderScreen title="Verifying your payment" message={statusMessage || "Please stay on this screen while we confirm your payment and unlock your access."} />;
-  }
+  if (verifying) return <LoaderScreen title="Verifying your payment" message={statusMessage || "Please stay on this screen while we confirm your payment and unlock your access."} />;
 
   if (profile?.accessStatus === "active") {
     return (
-      <main className="flex min-h-screen items-center justify-center px-4 py-12">
-        <Card className="w-full max-w-xl p-8 text-center">
-          <CheckCircle2 className="mx-auto h-14 w-14 text-success" />
-          <h1 className="mt-6 text-4xl font-semibold">Your access is already active</h1>
-          <p className="mt-4 text-lg text-muted">Your PocketFlow account is unlocked. We are taking you to the dashboard now.</p>
-          <div className="mt-6 flex items-center justify-center gap-2 text-primary">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            <span className="text-sm">Opening your dashboard...</span>
-          </div>
-          <div className="mt-8 flex justify-center">
-            <Button onClick={() => router.push("/dashboard")}>{redirecting ? "Open now" : "Open dashboard"}</Button>
-          </div>
-        </Card>
-      </main>
+      <main className="flex min-h-screen items-center justify-center px-4 py-12"><Card className="w-full max-w-xl p-8 text-center"><CheckCircle2 className="mx-auto h-14 w-14 text-success" /><h1 className="mt-6 text-4xl font-semibold">Your access is already active</h1><p className="mt-4 text-lg text-muted">Your PocketFlow account is unlocked. We are taking you to the dashboard now.</p><div className="mt-6 flex items-center justify-center gap-2 text-primary"><Loader2 className="h-4 w-4 animate-spin" /><span className="text-sm">Opening your dashboard...</span></div><div className="mt-8 flex justify-center"><Button onClick={() => router.push("/dashboard")}>{redirecting ? "Open now" : "Open dashboard"}</Button></div></Card></main>
     );
   }
 
   return (
     <main className="flex min-h-screen items-center justify-center px-4 py-12">
       <Card className="w-full max-w-2xl p-8">
-        <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-4 py-2 text-sm text-primary">
-          <ShieldCheck className="h-4 w-4" /> One-time payment unlock
-        </div>
+        <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-4 py-2 text-sm text-primary"><ShieldCheck className="h-4 w-4" />One-time payment unlock</div>
         <h1 className="mt-6 text-4xl font-semibold">Complete your PocketFlow payment</h1>
-        <p className="mt-4 text-lg text-muted">
-          You have created your account. Pay once through Cashfree and your profile will unlock automatically after payment confirmation.
-        </p>
+        <p className="mt-4 text-lg text-muted">You have created your account. Pay once through Cashfree and your profile will unlock automatically after payment confirmation.</p>
 
         <div className="mt-8 rounded-[28px] border border-white/10 bg-white/[0.03] p-6">
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className="text-2xl font-semibold">PocketFlow lifetime access</p>
-              <p className="mt-2 text-sm text-muted">Includes dashboard, budgets, lend/borrow, investments, assets, and settings.</p>
+              <p className="mt-2 text-sm text-muted">Current buyer offer: dashboard, budgets, lend/borrow, cards, loans, investments, assets, settings, and category view.</p>
+              <p className="mt-2 text-sm text-muted">Future pricing for new users may change later.</p>
             </div>
-            <div className="text-right">
-              <p className="text-sm text-muted line-through">₹1000</p>
-              <p className="text-4xl font-semibold text-primary">{pocketFlowPricing.displayPrice}</p>
-            </div>
+            <div className="text-right"><p className="text-sm text-muted line-through">₹1000</p><p className="text-4xl font-semibold text-primary">{pocketFlowPricing.displayPrice}</p></div>
           </div>
         </div>
 
+        <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-muted">No refund after payment because access is delivered instantly after verification. If promised service or access is not provided properly, contact support.</div>
         {error ? <div className="mt-6 rounded-2xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger">{error}</div> : null}
         {statusMessage && loading ? <div className="mt-4 rounded-2xl border border-primary/20 bg-primary/10 px-4 py-3 text-sm text-primary">{statusMessage}</div> : null}
 
-        <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-          <Button onClick={() => void startCheckout()} disabled={loading || syncing} className="sm:flex-1">
-            {loading || syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            {loading ? "Preparing payment..." : `Pay ${pocketFlowPricing.displayPrice} securely`}
-          </Button>
-          <Button variant="secondary" onClick={() => router.push("/login")} className="sm:flex-1" disabled={loading || syncing}>
-            Back to login
-          </Button>
-          {loading ? <p className="text-sm text-primary">Opening Cashfree secure checkout...</p> : null}
-        </div>
+        <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap"><Button onClick={() => void startCheckout()} disabled={loading || syncing} className="sm:flex-1">{loading || syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{loading ? "Preparing payment..." : `Pay ${pocketFlowPricing.displayPrice} securely`}</Button><Button variant="secondary" onClick={() => router.push("/login")} className="sm:flex-1" disabled={loading || syncing}>Back to login</Button>{loading ? <p className="text-sm text-primary">Opening Cashfree secure checkout...</p> : null}</div>
       </Card>
     </main>
   );

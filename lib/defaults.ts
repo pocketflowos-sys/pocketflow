@@ -27,7 +27,8 @@ export const emptyUserSettings: UserSettings = {
   investmentTypes: DEFAULT_INVESTMENT_TYPES,
   investmentPlatforms: DEFAULT_INVESTMENT_PLATFORMS,
   assetCategories: DEFAULT_ASSET_CATEGORIES,
-  supportEmail: process.env.SUPPORT_EMAIL ?? "support@pocketflowos.in"
+  supportEmail: process.env.SUPPORT_EMAIL ?? "support@pocketflowos.in",
+  theme: "dark"
 };
 
 export const emptyPocketFlowState: PocketFlowState = {
@@ -35,6 +36,8 @@ export const emptyPocketFlowState: PocketFlowState = {
   lendBorrowEntries: [],
   investments: [],
   assets: [],
+  creditCards: [],
+  loans: [],
   budgets: [],
   userSettings: emptyUserSettings
 };

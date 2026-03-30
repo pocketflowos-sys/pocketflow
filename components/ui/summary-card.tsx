@@ -1,27 +1,30 @@
 import type { ReactNode } from "react";
 import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 export function SummaryCard({
   title,
   value,
   detail,
   icon,
-  tone = "neutral"
+  tone = "neutral",
+  className
 }: {
   title: string;
   value: string;
   detail: string;
   icon?: ReactNode;
   tone?: "neutral" | "green" | "red" | "gold";
+  className?: string;
 }) {
   return (
-    <Card className="p-4 md:p-5">
+    <Card className={cn("h-full p-3.5 md:p-5", className)}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs md:text-sm text-muted">{title}</p>
-          <p className="mt-2 text-2xl font-semibold md:mt-3 md:text-3xl">{value}</p>
+          <p className="text-[11px] md:text-sm text-muted">{title}</p>
+          <p className="mt-2 text-xl font-semibold md:mt-3 md:text-3xl">{value}</p>
           <p
-            className={`mt-1.5 text-xs md:mt-2 md:text-sm ${
+            className={`mt-1.5 text-[11px] leading-4 md:mt-2 md:text-sm ${
               tone === "green"
                 ? "text-success"
                 : tone === "red"

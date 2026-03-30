@@ -1,6 +1,7 @@
 export type TransactionType = "income" | "expense";
 export type LendBorrowType = "given" | "borrowed";
 export type AccessStatus = "pending" | "active" | "blocked";
+export type ThemeMode = "dark" | "light";
 
 export type Transaction = {
   id: string;
@@ -11,6 +12,17 @@ export type Transaction = {
   amount: number;
   paymentMethod: string;
   notes?: string;
+  proofStoragePath?: string;
+  proofFileName?: string;
+  proofMimeType?: string;
+};
+
+export type TransactionMutationInput = Omit<Transaction, "id" | "proofStoragePath" | "proofFileName" | "proofMimeType"> & {
+  proofFile?: File | null;
+  removeProof?: boolean;
+  proofStoragePath?: string;
+  proofFileName?: string;
+  proofMimeType?: string;
 };
 
 export type LendBorrowEntry = {
@@ -45,11 +57,85 @@ export type Asset = {
   notes?: string;
 };
 
+export type CreditCard = {
+  id: string;
+  cardName: string;
+  issuer: string;
+  billingDate: string;
+  dueDate: string;
+  creditLimit: number;
+  currentBalance: number;
+  amountPaid: number;
+  notes?: string;
+};
+
+export type Loan = {
+  id: string;
+  loanName: string;
+  lender: string;
+  startDate: string;
+  dueDate?: string;
+  principalAmount: number;
+  outstandingAmount: number;
+  emiAmount: number;
+  nextEmiDate?: string;
+  interestRate: number;
+  notes?: string;
+};
+
 export type Budget = {
   id: string;
   month: string;
   category: string;
   amount: number;
+};
+
+export type DashboardCategorySlice = {
+  name: string;
+  value: number;
+};
+
+export type DashboardIncomeExpensePoint = {
+  month: string;
+  income: number;
+  expense: number;
+};
+
+export type DashboardInvestmentPoint = {
+  month: string;
+  value: number;
+};
+
+export type DashboardRecentTransaction = Transaction & {
+  dateLabel: string;
+};
+
+export type DashboardDueItem = LendBorrowEntry & {
+  balance: number;
+  dueSortValue: number;
+  status: "Overdue" | "Due soon" | "Closed";
+};
+
+export type DashboardSnapshot = {
+  totalIncome: number;
+  totalExpenses: number;
+  currentBalance: number;
+  savingsRate: number;
+  budgetUsed: number;
+  receivables: number;
+  payables: number;
+  totalInvestments: number;
+  assetsValue: number;
+  creditOutstanding: number;
+  creditLimitTotal: number;
+  totalLoanOutstanding: number;
+  totalEmiAmount: number;
+  expenseByCategory: DashboardCategorySlice[];
+  incomeVsExpense: DashboardIncomeExpensePoint[];
+  investmentGrowth: DashboardInvestmentPoint[];
+  recentTransactions: DashboardRecentTransaction[];
+  upcomingDueItems: DashboardDueItem[];
+  overdueCount: number;
 };
 
 export type UserSettings = {
@@ -62,6 +148,7 @@ export type UserSettings = {
   investmentPlatforms: string[];
   assetCategories: string[];
   supportEmail: string;
+  theme: ThemeMode;
 };
 
 export type PocketFlowState = {
@@ -69,6 +156,8 @@ export type PocketFlowState = {
   lendBorrowEntries: LendBorrowEntry[];
   investments: Investment[];
   assets: Asset[];
+  creditCards: CreditCard[];
+  loans: Loan[];
   budgets: Budget[];
   userSettings: UserSettings;
 };
@@ -94,7 +183,11 @@ export type PaymentRecord = {
 
 export type PocketFlowContextValue = {
   state: PocketFlowState;
+  dashboardSnapshot: DashboardSnapshot | null;
+  loadedScope: "empty" | "dashboard" | "full";
   profile: Profile | null;
+  authEmail: string;
+  authName: string;
   loading: boolean;
   syncing: boolean;
   operationError: string;
@@ -102,8 +195,8 @@ export type PocketFlowContextValue = {
   isPaid: boolean;
   refresh: () => Promise<void>;
   clearOperationError: () => void;
-  addTransaction: (input: Omit<Transaction, "id">) => Promise<boolean>;
-  updateTransaction: (id: string, input: Omit<Transaction, "id">) => Promise<boolean>;
+  addTransaction: (input: TransactionMutationInput) => Promise<boolean>;
+  updateTransaction: (id: string, input: TransactionMutationInput) => Promise<boolean>;
   deleteTransaction: (id: string) => Promise<boolean>;
   addLendBorrowEntry: (input: Omit<LendBorrowEntry, "id">) => Promise<boolean>;
   updateLendBorrowEntry: (id: string, input: Omit<LendBorrowEntry, "id">) => Promise<boolean>;
@@ -114,6 +207,12 @@ export type PocketFlowContextValue = {
   addAsset: (input: Omit<Asset, "id">) => Promise<boolean>;
   updateAsset: (id: string, input: Omit<Asset, "id">) => Promise<boolean>;
   deleteAsset: (id: string) => Promise<boolean>;
+  addCreditCard: (input: Omit<CreditCard, "id">) => Promise<boolean>;
+  updateCreditCard: (id: string, input: Omit<CreditCard, "id">) => Promise<boolean>;
+  deleteCreditCard: (id: string) => Promise<boolean>;
+  addLoan: (input: Omit<Loan, "id">) => Promise<boolean>;
+  updateLoan: (id: string, input: Omit<Loan, "id">) => Promise<boolean>;
+  deleteLoan: (id: string) => Promise<boolean>;
   addBudget: (input: Omit<Budget, "id">) => Promise<boolean>;
   updateBudget: (id: string, input: Omit<Budget, "id">) => Promise<boolean>;
   deleteBudget: (id: string) => Promise<boolean>;

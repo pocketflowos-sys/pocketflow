@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { FieldShell, InputField, SelectField, TextareaField } from "@/components/ui/form-controls";
+import { ComboField, FieldShell, InputField, TextareaField } from "@/components/ui/form-controls";
 import { getTodayIso } from "@/lib/formatters";
 import type { Investment } from "@/lib/types";
 
@@ -60,22 +60,10 @@ export function InvestmentForm({
           <InputField type="date" value={form.date} onChange={(event) => setForm((prev) => ({ ...prev, date: event.target.value }))} />
         </FieldShell>
         <FieldShell label="Investment type">
-          <SelectField value={form.investmentType} onChange={(event) => setForm((prev) => ({ ...prev, investmentType: event.target.value }))}>
-            {investmentTypeOptions.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </SelectField>
+          <ComboField options={investmentTypeOptions} value={form.investmentType} placeholder="Mutual Fund, Stock, FD" onChange={(event) => setForm((prev) => ({ ...prev, investmentType: event.target.value }))} />
         </FieldShell>
         <FieldShell label="Platform / broker">
-          <SelectField value={form.platform} onChange={(event) => setForm((prev) => ({ ...prev, platform: event.target.value }))}>
-            {platformOptions.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </SelectField>
+          <ComboField options={platformOptions} value={form.platform} placeholder="Groww, Zerodha, Bank" onChange={(event) => setForm((prev) => ({ ...prev, platform: event.target.value }))} />
         </FieldShell>
         <FieldShell label="Invested amount">
           <InputField type="number" min="0" value={form.investedAmount || ""} onChange={(event) => setForm((prev) => ({ ...prev, investedAmount: Number(event.target.value) }))} />
