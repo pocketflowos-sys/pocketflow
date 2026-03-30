@@ -21,7 +21,7 @@ import type { LendBorrowEntry } from "@/lib/types";
 type LendBorrowFilters = {
   search: string;
   type: "all" | "given" | "borrowed";
-  status: "all" | "open" | "closed" | "overdue";
+  status: "all" | "pending" | "partial" | "closed";
 };
 
 const defaultFilters: LendBorrowFilters = { search: "", type: "all", status: "all" };
@@ -40,7 +40,7 @@ export function LendBorrowPage() {
         const searchTarget = `${item.person} ${item.notes ?? ""}`.toLowerCase();
         const matchesSearch = filters.search ? searchTarget.includes(filters.search.toLowerCase()) : true;
         const matchesType = filters.type === "all" ? true : item.type === filters.type;
-        const normalizedStatus = item.balance === 0 ? "closed" : item.amountSettled > 0 ? "partial" : "pending";
+        const normalizedStatus: Exclude<LendBorrowFilters["status"], "all"> = item.balance === 0 ? "closed" : item.amountSettled > 0 ? "partial" : "pending";
         const matchesStatus = filters.status === "all" ? true : normalizedStatus === filters.status;
         return matchesSearch && matchesType && matchesStatus;
       });
@@ -91,8 +91,8 @@ export function LendBorrowPage() {
       >
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
           <FieldShell label="Search" className="col-span-2 md:col-span-1"><InputField value={filters.search} placeholder="Afsal, vendor, family" onChange={(event) => setFilters((prev) => ({ ...prev, search: event.target.value }))} /></FieldShell>
-          <FieldShell label="Type"><SelectField value={filters.type} onChange={(event) => setFilters((prev) => ({ ...prev, type: event.target.value }))}><option value="all">All</option><option value="given">Given</option><option value="borrowed">Borrowed</option></SelectField></FieldShell>
-          <FieldShell label="Status"><SelectField value={filters.status} onChange={(event) => setFilters((prev) => ({ ...prev, status: event.target.value }))}><option value="all">All</option><option value="pending">Pending</option><option value="partial">Partial</option><option value="closed">Closed</option></SelectField></FieldShell>
+          <FieldShell label="Type"><SelectField value={filters.type} onChange={(event) => setFilters((prev) => ({ ...prev, type: event.target.value as LendBorrowFilters["type"] }))}><option value="all">All</option><option value="given">Given</option><option value="borrowed">Borrowed</option></SelectField></FieldShell>
+          <FieldShell label="Status"><SelectField value={filters.status} onChange={(event) => setFilters((prev) => ({ ...prev, status: event.target.value as LendBorrowFilters["status"] }))}><option value="all">All</option><option value="pending">Pending</option><option value="partial">Partial</option><option value="closed">Closed</option></SelectField></FieldShell>
         </div>
         {hasActiveFilters ? <div className="mt-4 hidden md:block"><Button variant="ghost" onClick={resetFilters}>Clear filters</Button></div> : null}
       </FilterPanel>
