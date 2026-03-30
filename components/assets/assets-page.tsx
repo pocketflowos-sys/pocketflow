@@ -17,12 +17,17 @@ import { formatCompactDate, formatCsvDate, formatCurrency } from "@/lib/formatte
 import { usePocketFlow, usePocketFlowOptions } from "@/lib/pocketflow-store";
 import type { Asset } from "@/lib/types";
 
-const defaultFilters = { search: "", category: "all" };
+type AssetFilters = {
+  search: string;
+  category: string;
+};
+
+const defaultFilters: AssetFilters = { search: "", category: "all" };
 
 export function AssetsPage() {
   const { state, addAsset, updateAsset, deleteAsset } = usePocketFlow();
   const { assetCategories } = usePocketFlowOptions();
-  const [filters, setFilters] = useState(defaultFilters);
+  const [filters, setFilters] = useState<AssetFilters>(defaultFilters);
   const [editingItem, setEditingItem] = useState<Asset | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 

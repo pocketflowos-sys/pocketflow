@@ -18,11 +18,17 @@ import { formatCompactDate, formatCurrency } from "@/lib/formatters";
 import { usePocketFlow } from "@/lib/pocketflow-store";
 import type { LendBorrowEntry } from "@/lib/types";
 
-const defaultFilters = { search: "", type: "all", status: "all" };
+type LendBorrowFilters = {
+  search: string;
+  type: "all" | "given" | "borrowed";
+  status: "all" | "open" | "closed" | "overdue";
+};
+
+const defaultFilters: LendBorrowFilters = { search: "", type: "all", status: "all" };
 
 export function LendBorrowPage() {
   const { state, addLendBorrowEntry, updateLendBorrowEntry, deleteLendBorrowEntry } = usePocketFlow();
-  const [filters, setFilters] = useState(defaultFilters);
+  const [filters, setFilters] = useState<LendBorrowFilters>(defaultFilters);
   const [editingItem, setEditingItem] = useState<LendBorrowEntry | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 

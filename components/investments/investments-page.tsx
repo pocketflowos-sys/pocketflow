@@ -18,12 +18,18 @@ import { formatCompactDate, formatCsvDate, formatCurrency } from "@/lib/formatte
 import { usePocketFlow, usePocketFlowOptions } from "@/lib/pocketflow-store";
 import type { Investment } from "@/lib/types";
 
-const defaultFilters = { search: "", type: "all", platform: "all" };
+type InvestmentFilters = {
+  search: string;
+  type: string;
+  platform: string;
+};
+
+const defaultFilters: InvestmentFilters = { search: "", type: "all", platform: "all" };
 
 export function InvestmentsPage() {
   const { state, addInvestment, updateInvestment, deleteInvestment } = usePocketFlow();
   const { investmentPlatforms, investmentTypes } = usePocketFlowOptions();
-  const [filters, setFilters] = useState(defaultFilters);
+  const [filters, setFilters] = useState<InvestmentFilters>(defaultFilters);
   const [editingItem, setEditingItem] = useState<Investment | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 

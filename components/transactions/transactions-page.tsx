@@ -21,14 +21,23 @@ import { createTransactionProofSignedUrl } from "@/lib/transaction-proofs";
 import { cn } from "@/lib/utils";
 import type { Transaction } from "@/lib/types";
 
-const defaultFilters = {
+type TransactionFilters = {
+  search: string;
+  type: "all" | "income" | "expense";
+  category: string;
+  paymentMethod: string;
+  startDate: string;
+  endDate: string;
+};
+
+const defaultFilters: TransactionFilters = {
   search: "",
   type: "all",
   category: "all",
   paymentMethod: "all",
   startDate: "",
   endDate: ""
-} as const;
+};
 
 const typeFilterOptions: Array<{ value: "all" | "income" | "expense"; label: string }> = [
   { value: "all", label: "All" },
@@ -45,7 +54,7 @@ function normalizeFilterValue(value: string) {
 export function TransactionsPage() {
   const { state, addTransaction, updateTransaction, deleteTransaction } = usePocketFlow();
   const { categories, paymentMethods } = usePocketFlowOptions();
-  const [filters, setFilters] = useState(defaultFilters);
+  const [filters, setFilters] = useState<TransactionFilters>(defaultFilters);
   const [editingItem, setEditingItem] = useState<Transaction | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [visibleCount, setVisibleCount] = useState(8);
